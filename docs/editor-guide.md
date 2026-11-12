@@ -18,11 +18,11 @@ godot --editor --path /home/paulsheridan/projects/umbilical
 - **F6** on `scenes/level/ship.tscn` loads the level alone (no player or HUD;
   useful for checking geometry and lighting).
 - **F6** on `scenes/level/rooms/fab_bay.tscn` loads the bay alone.
-- **F6** on `scenes/actors/player.tscn` or `drone.tscn` previews the prefabs.
+- **F6** on any `scenes/actors/*.tscn` previews that body.
 
 `scenes/main.tscn` now holds the `WorldEnvironment` and instances the level and
-the player/drone prefabs. The HUD and the four host bodies are still built in
-code; that is the remaining conversion work.
+the actor prefabs. The HUD is still built in code; that is the remaining
+conversion work.
 
 ---
 
@@ -38,6 +38,10 @@ scenes/
   actors/
     player.tscn                  # body, capsule, camera, eye fill
     drone.tscn                   # chassis, tracks, camera, status lamp
+    host.tscn                    # ordinary junction host
+    stalker.tscn                 # skeletal rig, eyes, core
+    collector.tscn               # hunched scavenger, lantern, sack
+    processor.tscn               # pinned maw, jaw, gaunt arms
 assets/
   environment.tres               # fog / ambient / background, inspector-editable
   materials/*.tres               # shared palette
@@ -146,9 +150,10 @@ runtime value.
 `assets/environment.tres` owns fog, ambient and background. Edit the `.tres`
 files directly; they are the source of truth.
 
-The player and drone bodies are authored scenes. Their scripts only reference
-named children (`$Head/Cam`, `$Chassis/LED`, …), so move or restyle the body in
-the editor without touching behaviour.
+All six actor bodies are authored scenes. Their scripts only reference named
+children (`$Head/Cam`, `$Chassis/LED`, `$Rig/Hips/Torso`, …), so move or
+restyle a body in the editor without touching behaviour. The audio player for
+the Stalker's hum is created at runtime, not saved in the scene.
 
 ---
 
