@@ -1,0 +1,63 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://src/drone/drone.gd" id="1_iq8og"]
+[ext_resource type="Material" path="res://assets/materials/machine.tres" id="2_dnkg8"]
+[ext_resource type="Material" path="res://assets/materials/cable.tres" id="3_cg8ad"]
+[ext_resource type="Material" path="res://assets/materials/screen_off.tres" id="4_i8ftb"]
+[ext_resource type="Material" path="res://assets/materials/amber.tres" id="5_cabyk"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_t0544"]
+size = Vector3(0.72, 0.5, 0.95)
+
+[node name="Drone" type="CharacterBody3D" unique_id=2126085494]
+script = ExtResource("1_iq8og")
+
+[node name="Collision" type="CollisionShape3D" parent="." unique_id=293781044]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+shape = SubResource("BoxShape3D_t0544")
+
+[node name="Chassis" type="Node3D" parent="." unique_id=1591252776]
+
+[node name="Body" type="CSGBox3D" parent="Chassis" unique_id=196885248]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.32, 0)
+size = Vector3(0.72, 0.3, 0.95)
+material = ExtResource("2_dnkg8")
+
+[node name="TrackL" type="CSGCylinder3D" parent="Chassis" unique_id=944220558]
+transform = Transform3D(-4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0, 1, -0.33, 0.16, 0)
+radius = 0.16
+height = 0.94
+material = ExtResource("3_cg8ad")
+
+[node name="TrackR" type="CSGCylinder3D" parent="Chassis" unique_id=1633611349]
+transform = Transform3D(-4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0, 1, 0.33, 0.16, 0)
+radius = 0.16
+height = 0.94
+material = ExtResource("3_cg8ad")
+
+[node name="Barrel" type="CSGCylinder3D" parent="Chassis" unique_id=679785236]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0.5, -0.45)
+radius = 0.09
+height = 0.3
+material = ExtResource("4_i8ftb")
+
+[node name="LED" type="CSGBox3D" parent="Chassis" unique_id=615446650]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.49, 0.45)
+size = Vector3(0.09, 0.03, 0.09)
+material = ExtResource("5_cabyk")
+
+[node name="Head" type="Node3D" parent="." unique_id=1310720417]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.92, 0.05)
+
+[node name="Cam" type="Camera3D" parent="Head" unique_id=1495925314]
+fov = 80.0
+near = 0.04
+
+[node name="Lamp" type="OmniLight3D" parent="." unique_id=1807388030]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, -0.1)
+light_color = Color(0.75, 0.8, 0.9, 1)
+light_energy = 0.42
+light_volumetric_fog_energy = 0.0
+shadow_enabled = true
+omni_range = 3.4
+omni_attenuation = 2.2

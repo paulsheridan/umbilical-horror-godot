@@ -55,67 +55,11 @@ func _exit_tree() -> void:
 func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1 | 4
-
-	var col := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(0.72, 0.5, 0.95)
-	col.shape = box
-	col.position = Vector3(0, 0.3, 0)
-	add_child(col)
-
-	# --- Chassis (crawler graybox) ------------------------------------------
-	var body := CSGBox3D.new()
-	body.size = Vector3(0.72, 0.3, 0.95)
-	body.position = Vector3(0, 0.32, 0)
-	body.material = Mats.machine()
-	add_child(body)
-	for side in [-1.0, 1.0]:
-		var track := CSGCylinder3D.new()
-		track.radius = 0.16
-		track.height = 0.94
-		track.position = Vector3(side * 0.33, 0.16, 0)
-		track.rotation = Vector3(0, 0, PI * 0.5)
-		track.material = Mats.cable()
-		add_child(track)
-	# The camera barrel: the still optic is always aboard, and the salvaged
-	# video module wakes the live feed that looks through it.
-	var barrel := CSGCylinder3D.new()
-	barrel.radius = 0.09
-	barrel.height = 0.3
-	barrel.position = Vector3(0, 0.5, -0.45)
-	barrel.rotation = Vector3(PI * 0.5, 0, 0)
-	barrel.material = Mats.screen_off()
-	add_child(barrel)
-	var led := CSGBox3D.new()
-	led.size = Vector3(0.09, 0.03, 0.09)
-	led.position = Vector3(0, 0.49, 0.45)
-	led.material = Mats.amber()
-	add_child(led)
-	_led = led
-
-	# --- Head: status-lamp "vision" only ------------------------------------
-	var head := Node3D.new()
-	head.position = Vector3(0, 0.92, 0.05)
-	add_child(head)
-	cam = Camera3D.new()
-	cam.fov = 80.0
-	cam.near = 0.04
-	head.add_child(cam)
-
-	# Status LED splash — the only "eyes": a pool of dim neutral light that
-	# moves with the chassis. Reading a wall means driving into its edge of
-	# the pool; the scanner carries everything farther.
-	var lamp := OmniLight3D.new()
-	lamp.light_color = Color(0.75, 0.8, 0.9)
-	lamp.light_energy = 0.42
-	lamp.omni_range = 3.4
-	lamp.shadow_enabled = true
-	lamp.omni_attenuation = 2.2
-	lamp.light_volumetric_fog_energy = 0.0
-	lamp.position = Vector3(0, 0.35, -0.1)
-	add_child(lamp)
+	# Chassis, tracks, camera barrel and status lamp are authored in
+	# scenes/actors/drone.tscn; this script owns behaviour only.
+	cam = $Head/Cam
+	_led = $Chassis/LED
 	floor_snap_length = 0.5
-
 
 func set_controlled(on: bool) -> void:
 	controlled = on

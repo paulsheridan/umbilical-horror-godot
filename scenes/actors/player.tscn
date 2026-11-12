@@ -1,0 +1,28 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://src/player/player.gd" id="1_15tap"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_ru62r"]
+radius = 0.35
+height = 1.8
+
+[node name="Player" type="CharacterBody3D" unique_id=835512836]
+script = ExtResource("1_15tap")
+
+[node name="Collision" type="CollisionShape3D" parent="." unique_id=1422527166]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("CapsuleShape3D_ru62r")
+
+[node name="Head" type="Node3D" parent="." unique_id=1313959333]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.62, 0)
+
+[node name="Cam" type="Camera3D" parent="Head" unique_id=1791949860]
+fov = 74.0
+
+[node name="Fill" type="OmniLight3D" parent="." unique_id=808397428]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 0.3)
+light_color = Color(0.55, 0.6, 0.7, 1)
+light_energy = 0.22
+light_volumetric_fog_energy = 0.0
+omni_range = 4.0
+omni_attenuation = 2.0

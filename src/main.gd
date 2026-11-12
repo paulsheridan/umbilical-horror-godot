@@ -19,6 +19,8 @@ extends Node3D
 const FAB_BAY_SCENE := preload("res://scenes/level/rooms/fab_bay.tscn")
 const SHIP_SCENE := preload("res://scenes/level/ship.tscn")
 const DRONE := preload("res://src/drone/drone.gd")
+const DRONE_SCENE := preload("res://scenes/actors/drone.tscn")
+const PLAYER_SCENE := preload("res://scenes/actors/player.tscn")
 const SCANNER := preload("res://src/ui/scanner.gd")
 const HOST := preload("res://src/host/host.gd")
 const STALKER := preload("res://src/host/stalker.gd")
@@ -160,8 +162,6 @@ var _table_t := 0.0
 
 
 func _ready() -> void:
-	_build_environment()
-
 	level = FAB_BAY_SCENE.instantiate()
 	add_child(level)
 	level.pilot_chair.on_interact = Callable(self, "_start_sortie")
@@ -186,8 +186,7 @@ func _ready() -> void:
 	# The still camera exists from the first launch; there is no install gate.
 	_setup_feed()
 
-	player = CharacterBody3D.new()
-	player.set_script(load("res://src/player/player.gd"))
+	player = PLAYER_SCENE.instantiate()
 	add_child(player)
 	player.position = level.player_start
 	player.rotation.y = PI * 0.5
@@ -904,8 +903,7 @@ func _start_sortie() -> void:
 ## a time; later ones sit deeper in the ship corridor (negative z), never on
 ## the bay side of the sealed north wall. The bay is the player's safe room.
 func _spawn_drone(slot: int) -> void:
-	var d := CharacterBody3D.new()
-	d.set_script(DRONE)
+	var d := DRONE_SCENE.instantiate()
 	add_child(d)
 	d.global_position = _free_cradle_pos()
 	d.dock_pos = ship.dock_pos
@@ -977,20 +975,26 @@ func _deploy_drone() -> void:
 	_refresh_objective_text()
 
 
+## Point every sensing body at the linked chassis (or at nothing).
+func _bind_senses(target) -> void:
+	for h in hosts:
+		h.drone = target
+	# The Processor is in the hosts group but not in main.hosts: it has no
+	# patrol or noise model, so it is bound explicitly.
+	if processor != null and is_instance_valid(processor):
+		processor.drone = target
+	scanner.drone = target
+	if target != null:
+		scanner.anchor_pos = ship.dock_pos
+
+
 ## Rebind the shared senses and HUD to the active chassis. Nothing moves: the
 ## fleet's whole point is that the link is the only thing that transfers.
 func _bind_active() -> void:
 	if drone == null:
 		return
 	drone.live_view = _live_feed_active()
-	for h in hosts:
-		h.drone = drone
-	# The Processor is in the hosts group but not in main.hosts: it has no
-	# patrol or noise model, so it is bound explicitly.
-	if processor != null and is_instance_valid(processor):
-		processor.drone = drone
-	scanner.drone = drone
-	scanner.anchor_pos = ship.dock_pos
+	_bind_senses(drone)
 	hud.set_live_feed(_live_feed_active())
 	hud.set_feed_enabled(true)
 	hud.set_feed_source(_feed_vp)
@@ -1047,12 +1051,7 @@ func _switch_drone(index: int) -> void:
 	_cargo = drone.cargo
 	drone.live_view = _live_feed_active()
 	drone.set_controlled(true)
-	for h in hosts:
-		h.drone = drone
-	if processor != null and is_instance_valid(processor):
-		processor.drone = drone
-	scanner.drone = drone
-	scanner.anchor_pos = ship.dock_pos
+	_bind_senses(drone)
 	hud.set_live_feed(_live_feed_active())
 	hud.set_feed_source(_feed_vp)
 	hud.hide_photo()
@@ -1074,11 +1073,7 @@ func _leave_chair() -> void:
 	drone.cargo = _cargo
 	drone.velocity = Vector3.ZERO
 	drone.set_controlled(false)
-	scanner.drone = null
-	for h in hosts:
-		h.drone = null
-	if processor != null and is_instance_valid(processor):
-		processor.drone = null
+	_bind_senses(null)
 
 	GameState.sortie = GameState.Sortie.IDLE
 	player.cam.make_current()
@@ -1207,12 +1202,8 @@ func _teardown_sortie(lost: bool) -> void:
 	drone = null
 	_drone_index = 0
 	_cargo = ""
-	scanner.drone = null
 	_deploy_cd = 0.0
-	for h in hosts:
-		h.drone = null
-	if processor != null and is_instance_valid(processor):
-		processor.drone = null
+	_bind_senses(null)
 	GameState.sortie = GameState.Sortie.IDLE
 	player.cam.make_current()
 	player.focus = null          # refocus the bay, refresh the chair prompt
@@ -1260,22 +1251,6 @@ func _signal_bars(dist: float) -> int:
 # --------------------------------------------------------------------------
 # Environment / ambience
 # --------------------------------------------------------------------------
-
-func _build_environment() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.006, 0.008, 0.011)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.18, 0.22, 0.30)
-	env.ambient_light_energy = 0.35
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.02, 0.03, 0.045)
-	env.fog_density = 0.030
-	env.fog_sky_affect = 0.0
-	var wenv := WorldEnvironment.new()
-	wenv.environment = env
-	add_child(wenv)
-
 
 func _hull_knock() -> void:
 	var body_pos: Vector3 = drone.global_position if drone != null else player.global_position

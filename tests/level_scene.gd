@@ -7,6 +7,8 @@ extends Node3D
 
 const SHIP_SCENE := preload("res://scenes/level/ship.tscn")
 const FAB_SCENE := preload("res://scenes/level/rooms/fab_bay.tscn")
+const PLAYER_SCENE := preload("res://scenes/actors/player.tscn")
+const DRONE_SCENE := preload("res://scenes/actors/drone.tscn")
 
 const ANCHORS := [
 	"Dock", "CameraSite", "Food", "GalleyDoorApproach", "CollectorDeposit",
@@ -121,6 +123,29 @@ func _run() -> void:
 				"editing PlayerStart moves the player spawn")
 		start.position = Vector3(4.8, 0.2, 2.8)
 		bay._ready()
+
+	# --- Actor prefabs -----------------------------------------------------
+	var p = PLAYER_SCENE.instantiate()
+	add_child(p)
+	_check(p is CharacterBody3D and p.get_node_or_null("Collision") != null,
+			"the player prefab owns its body and collision")
+	_check(p.get_node_or_null("Head/Cam") is Camera3D and p.cam != null,
+			"the player prefab owns its camera")
+	_check(p.get_node_or_null("Fill") is OmniLight3D,
+			"the player prefab owns its eye fill")
+
+	var d = DRONE_SCENE.instantiate()
+	add_child(d)
+	_check(d is CharacterBody3D and d.get_node_or_null("Chassis/LED") != null,
+			"the drone prefab owns its chassis and status LED")
+	_check(d.get_node_or_null("Head/Cam") is Camera3D and d.cam != null,
+			"the drone prefab owns its camera")
+	_check(d.get_node_or_null("Chassis/TrackL") != null
+			and d.get_node_or_null("Chassis/TrackR") != null
+			and d.get_node_or_null("Lamp") != null,
+			"the drone prefab owns its tracks and lamp")
+	p.queue_free()
+	d.queue_free()
 
 	print("LEVEL SCENE %s" % ("FAIL" if _failed else "PASS"))
 	get_tree().quit(1 if _failed else 0)

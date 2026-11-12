@@ -27,37 +27,10 @@ var _hurry := false
 func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1 | 4   # world + interactables
-
-	var col := CollisionShape3D.new()
-	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.35
-	capsule.height = 1.8
-	col.shape = capsule
-	col.position = Vector3(0, 0.9, 0)
-	add_child(col)
-
-	var head := Node3D.new()
-	head.position = Vector3(0, 1.62, 0)
-	add_child(head)
-	cam = Camera3D.new()
-	cam.fov = 74.0
-	cam.near = 0.05
-	head.add_child(cam)
+	# The body, camera and eye fill are authored in scenes/actors/player.tscn.
+	cam = $Head/Cam
 	cam.make_current()
 	floor_snap_length = 0.5
-
-	# Faint eye-accommodation fill, per hallway-demo: not a flashlight, just
-	# enough shading nearby that silhouettes read at all. No volumetric pump.
-	var fill := OmniLight3D.new()
-	fill.light_color = Color(0.55, 0.60, 0.70)
-	fill.light_energy = 0.22
-	fill.omni_range = 4.0
-	fill.shadow_enabled = false
-	fill.omni_attenuation = 2.0
-	fill.light_volumetric_fog_energy = 0.0
-	fill.position = Vector3(0, 1.2, 0.3)
-	add_child(fill)
-
 
 func _input(event: InputEvent) -> void:
 	if Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED:
