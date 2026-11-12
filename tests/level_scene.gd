@@ -9,6 +9,10 @@ const SHIP_SCENE := preload("res://scenes/level/ship.tscn")
 const FAB_SCENE := preload("res://scenes/level/rooms/fab_bay.tscn")
 const PLAYER_SCENE := preload("res://scenes/actors/player.tscn")
 const DRONE_SCENE := preload("res://scenes/actors/drone.tscn")
+const PROCESSOR_SCENE := preload("res://scenes/actors/processor.tscn")
+const COLLECTOR_SCENE := preload("res://scenes/actors/collector.tscn")
+const HOST_SCENE := preload("res://scenes/actors/host.tscn")
+const STALKER_SCENE := preload("res://scenes/actors/stalker.tscn")
 
 const ANCHORS := [
 	"Dock", "CameraSite", "Food", "GalleyDoorApproach", "CollectorDeposit",
@@ -146,6 +150,37 @@ func _run() -> void:
 			"the drone prefab owns its tracks and lamp")
 	p.queue_free()
 	d.queue_free()
+
+	var pr = PROCESSOR_SCENE.instantiate()
+	add_child(pr)
+	_check(pr.get_node_or_null("Rig/Jaw") is Node3D and pr._jaw != null,
+			"the Processor prefab owns its maw and jaw")
+	_check(pr._hands.size() == 2 and pr._arm_pivots.size() == 2,
+			"the Processor prefab owns both gaunt arms and hands")
+	pr.queue_free()
+
+	var col = COLLECTOR_SCENE.instantiate()
+	add_child(col)
+	_check(col.get_node_or_null("Rig/Hips/Head") is Node3D and col._head != null,
+			"the Collector prefab owns its hunched body")
+	_check(col._lantern != null and col._sack != null,
+			"the Collector prefab owns its lantern and drag sack")
+	col.queue_free()
+
+	var h = HOST_SCENE.instantiate()
+	add_child(h)
+	_check(h.get_node_or_null("Meshes") is Node3D and h._meshes != null,
+			"the host prefab owns its shadow body")
+	h.queue_free()
+
+	var st = STALKER_SCENE.instantiate()
+	add_child(st)
+	_check(st.get_node_or_null("Rig/Hips/Torso/Head") is Node3D and st._head != null,
+			"the Stalker prefab owns its skeletal rig")
+	_check(st._arm_l != null and st._arm_r != null
+			and st._leg_l != null and st._leg_r != null,
+			"the Stalker prefab owns its limbs")
+	st.queue_free()
 
 	print("LEVEL SCENE %s" % ("FAIL" if _failed else "PASS"))
 	get_tree().quit(1 if _failed else 0)

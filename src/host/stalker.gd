@@ -10,9 +10,9 @@ extends CharacterBody3D
 ## Hiding: `hide_spots` is a list of {center, half} footprints for low tables.
 ## A drone inside one is invisible to sight (but not to hearing).
 ##
-## The body is built from graybox primitives in `_build_body`: a hunched,
-## elongated skeleton with a bone skull, ribs, long clawed arms and a low hum.
-## It is animated procedurally in `_animate`.
+## The body is authored in `scenes/actors/stalker.tscn`: a hunched, elongated
+## skeleton with a bone skull, ribs, long clawed arms and a low hum. It is
+## animated procedurally in `_animate`.
 
 signal drone_caught
 signal lunge_started
@@ -54,7 +54,6 @@ const AMBUSH_TRIGGER := 3.2
 const AMBUSH_WAIT := 22.0
 const W_AMBUSH_SETUP := 2.2
 
-const Mats := preload("res://src/mats.gd")
 
 var drone = null
 var waypoints: Array = []
@@ -123,14 +122,8 @@ func _ready() -> void:
 	collision_mask = 1 | 4
 	add_to_group("hosts")
 	floor_snap_length = 0.5
-	var col := CollisionShape3D.new()
-	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.34
-	capsule.height = 1.8
-	col.shape = capsule
-	col.position = Vector3(0, 0.9, 0)
-	add_child(col)
-	_build_body()
+	# The rig is authored in scenes/actors/stalker.tscn.
+	_resolve_body()
 	# One long sub-bass note. No footsteps: the hum is its whole voice.
 	_hum = Sfx.loop3d("stalker_hum", -34.0)
 	if _hum != null:
@@ -138,6 +131,24 @@ func _ready() -> void:
 		add_child(_hum)
 		_hum.play()
 	_stuck_last = global_position
+
+
+func _resolve_body() -> void:
+	_rig = $Rig
+	_hips = $Rig/Hips
+	_torso = $Rig/Hips/Torso
+	_head = _torso.get_node("Head")
+	_arm_l = _torso.get_node("ArmL")
+	_arm_r = _torso.get_node("ArmR")
+	_elbow_l = _torso.get_node("ArmL/ElbowL")
+	_elbow_r = _torso.get_node("ArmR/ElbowR")
+	_leg_l = _hips.get_node("LegL")
+	_leg_r = _hips.get_node("LegR")
+	_knee_l = _hips.get_node("LegL/KneeL")
+	_knee_r = _hips.get_node("LegR/KneeR")
+	_eye_l = _torso.get_node("Head/EyeL") as CSGSphere3D
+	_eye_r = _torso.get_node("Head/EyeR") as CSGSphere3D
+	_core = _torso.get_node("Core") as CSGSphere3D
 
 
 func reset() -> void:
@@ -749,144 +760,6 @@ func _face(delta: float) -> void:
 # --------------------------------------------------------------------------
 # Body + animation
 # --------------------------------------------------------------------------
-
-func _build_body() -> void:
-	var dark := Mats.shadow()
-	var bone := Mats.bone()
-	var gristle := Mats.cable()
-	var glow := Mats.amber()
-
-	_rig = Node3D.new()
-	add_child(_rig)
-
-	_hips = Node3D.new()
-	_hips.position = Vector3(0, 1.05, 0)
-	_rig.add_child(_hips)
-
-	_torso = Node3D.new()
-	_hips.add_child(_torso)
-
-	# Hunched, elongated trunk: a dark mass with an exposed pale cage.
-	_mesh_cyl(_torso, 0.24, 1.15, Vector3(0, 0.575, 0), Vector3.ZERO, dark)
-	_mesh_box(_torso, Vector3(0.055, 0.56, 0.055), Vector3(0, 0.58, -0.235),
-			Vector3.ZERO, bone)
-	for i in 4:
-		var y := 0.34 + i * 0.18
-		for side in [-1.0, 1.0]:
-			var rib := _mesh_box(_torso, Vector3(0.30, 0.032, 0.050),
-					Vector3(side * 0.16, y, -0.205),
-					Vector3(0, 0, side * 0.26), bone)
-			rib.rotation.y = side * 0.16
-	# Back spines.
-	for i in 4:
-		var sp := _mesh_cyl(_torso, 0.035 - i * 0.004, 0.42 + i * 0.05,
-				Vector3(0, 0.36 + i * 0.18, 0.21),
-				Vector3(0.55, 0, 0), bone, true)
-		sp.rotation.z = (0.12 if i % 2 == 0 else -0.12)
-
-	# Skull: eyeless, long, with a black maw and two amber points.
-	_head = Node3D.new()
-	_head.position = Vector3(0, 1.15, -0.02)
-	_torso.add_child(_head)
-	var skull := _mesh_sphere(_head, 0.21, Vector3.ZERO, Vector3(0.85, 1.35, 0.95), bone)
-	skull.rotation.x = -0.16
-	_mesh_box(_head, Vector3(0.11, 0.30, 0.07), Vector3(0, -0.04, -0.18),
-			Vector3.ZERO, gristle)
-	# Black sockets stay visible when the eyes are shut; the amber points grow
-	# out of them on the spring.
-	_mesh_sphere(_head, 0.055, Vector3(-0.06, 0.04, -0.185), Vector3.ONE, gristle)
-	_mesh_sphere(_head, 0.055, Vector3(0.06, 0.04, -0.185), Vector3.ONE, gristle)
-	_eye_l = _mesh_sphere(_head, 0.022, Vector3(-0.06, 0.04, -0.195), Vector3.ONE, glow)
-	_eye_r = _mesh_sphere(_head, 0.022, Vector3(0.06, 0.04, -0.195), Vector3.ONE, glow)
-	for side in [-1.0, 0.0, 1.0]:
-		_mesh_cyl(_head, 0.025, 0.26, Vector3(side * 0.09, 0.23, 0.02),
-				Vector3(side * 0.18, 0, side * 0.12), bone, true)
-
-	# Long arms, two segments, three claws. Dark forearms, pale claws.
-	for side in [-1.0, 1.0]:
-		var arm := Node3D.new()
-		arm.position = Vector3(side * 0.31, 0.95, 0)
-		_torso.add_child(arm)
-		_mesh_sphere(arm, 0.09, Vector3.ZERO, Vector3.ONE, dark)
-		_mesh_cyl(arm, 0.060, 0.62, Vector3(0, -0.31, 0), Vector3.ZERO, dark)
-		var elbow := Node3D.new()
-		elbow.position = Vector3(0, -0.62, 0)
-		arm.add_child(elbow)
-		_mesh_cyl(elbow, 0.052, 0.66, Vector3(0, -0.33, 0), Vector3.ZERO, dark)
-		for c in [-1.0, 0.0, 1.0]:
-			_mesh_cyl(elbow, 0.022, 0.20,
-					Vector3(c * 0.045, -0.73, 0.01),
-					Vector3(PI, 0, 0), bone, true)
-		if side < 0.0:
-			_arm_l = arm
-			_elbow_l = elbow
-		else:
-			_arm_r = arm
-			_elbow_r = elbow
-
-	# Legs: long, bent, ending in split claws.
-	for side in [-1.0, 1.0]:
-		var leg := Node3D.new()
-		leg.position = Vector3(side * 0.17, 0, 0)
-		_hips.add_child(leg)
-		_mesh_sphere(leg, 0.10, Vector3.ZERO, Vector3.ONE, dark)
-		_mesh_cyl(leg, 0.085, 0.52, Vector3(0, -0.26, 0), Vector3.ZERO, dark)
-		var knee := Node3D.new()
-		knee.position = Vector3(0, -0.52, 0)
-		leg.add_child(knee)
-		_mesh_cyl(knee, 0.070, 0.48, Vector3(0, -0.24, 0), Vector3.ZERO, dark)
-		_mesh_box(knee, Vector3(0.13, 0.06, 0.28), Vector3(0, -0.50, -0.10),
-				Vector3(0, 0, 0), bone)
-		for c in [-1.0, 1.0]:
-			_mesh_cyl(knee, 0.020, 0.18, Vector3(c * 0.04, -0.55, -0.22),
-					Vector3(1.45, 0, 0), bone, true)
-		if side < 0.0:
-			_leg_l = leg
-			_knee_l = knee
-		else:
-			_leg_r = leg
-			_knee_r = knee
-
-	# A faint amber core, visible between the ribs in the dark.
-	_core = _mesh_sphere(_torso, 0.055, Vector3(0, 0.62, -0.14), Vector3.ONE, glow)
-
-	_torso.rotation.x = -0.28
-
-
-func _mesh_box(parent: Node3D, size: Vector3, pos: Vector3,
-		rot: Vector3, mat: StandardMaterial3D) -> CSGBox3D:
-	var b := CSGBox3D.new()
-	b.size = size
-	b.position = pos
-	b.rotation = rot
-	b.material = mat
-	parent.add_child(b)
-	return b
-
-
-func _mesh_cyl(parent: Node3D, radius: float, height: float, pos: Vector3,
-		rot: Vector3, mat: StandardMaterial3D, cone := false) -> CSGCylinder3D:
-	var c := CSGCylinder3D.new()
-	c.radius = radius
-	c.height = height
-	c.position = pos
-	c.rotation = rot
-	c.material = mat
-	c.cone = cone
-	parent.add_child(c)
-	return c
-
-
-func _mesh_sphere(parent: Node3D, radius: float, pos: Vector3,
-		scale_v: Vector3, mat: StandardMaterial3D) -> CSGSphere3D:
-	var s := CSGSphere3D.new()
-	s.radius = radius
-	s.position = pos
-	s.scale = scale_v
-	s.material = mat
-	parent.add_child(s)
-	return s
-
 
 func _animate(delta: float) -> void:
 	if state == State.AMBUSH:

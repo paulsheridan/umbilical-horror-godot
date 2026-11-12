@@ -18,9 +18,11 @@ godot --editor --path /home/paulsheridan/projects/umbilical
 - **F6** on `scenes/level/ship.tscn` loads the level alone (no player or HUD;
   useful for checking geometry and lighting).
 - **F6** on `scenes/level/rooms/fab_bay.tscn` loads the bay alone.
+- **F6** on `scenes/actors/player.tscn` or `drone.tscn` previews the prefabs.
 
-`scenes/main.tscn` still creates the player, HUD, hosts, drones and systems in
-code. That is deliberate: only the level has been converted so far.
+`scenes/main.tscn` now holds the `WorldEnvironment` and instances the level and
+the player/drone prefabs. The HUD and the four host bodies are still built in
+code; that is the remaining conversion work.
 
 ---
 
@@ -28,11 +30,17 @@ code. That is deliberate: only the level has been converted so far.
 
 ```
 scenes/
-  main.tscn                      # game entry point
+  main.tscn                      # entry point + WorldEnvironment
   level/
     ship.tscn                    # the ship, grouped by room
     rooms/
       fab_bay.tscn               # the safe room
+  actors/
+    player.tscn                  # body, capsule, camera, eye fill
+    drone.tscn                   # chassis, tracks, camera, status lamp
+assets/
+  environment.tres               # fog / ambient / background, inspector-editable
+  materials/*.tres               # shared palette
 ```
 
 ### `ship.tscn` tree
@@ -134,10 +142,13 @@ runtime value.
 
 ## 5. Materials
 
-`src/mats.gd` is a thin loader over `assets/materials/*.tres`. Normal art work
-edits the `.tres` files directly. `tools/export_materials.tscn` is only for
-regenerating the palette from code definitions, and the code definitions are no
-longer present; treat the `.tres` files as the source of truth.
+`src/mats.gd` is a thin loader over `assets/materials/*.tres`, and
+`assets/environment.tres` owns fog, ambient and background. Edit the `.tres`
+files directly; they are the source of truth.
+
+The player and drone bodies are authored scenes. Their scripts only reference
+named children (`$Head/Cam`, `$Chassis/LED`, …), so move or restyle the body in
+the editor without touching behaviour.
 
 ---
 

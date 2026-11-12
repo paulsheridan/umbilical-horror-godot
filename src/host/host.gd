@@ -73,13 +73,10 @@ var relentless := false
 
 ## The M4 shadow stalker is a distinct thing: invisible except for the giant
 ## shadow it throws, and a moving mass on the radar instead of noise blips.
-var shadow_only := false
-var giant := false
 var radar_mass := false
 var radar_blips := true
 var low_hum := false
 
-const Mats := preload("res://src/mats.gd")
 
 var _wp := 0
 var _rest := 0.0
@@ -116,53 +113,10 @@ func _ready() -> void:
 	collision_layer = 8
 	collision_mask = 1 | 4
 	add_to_group("hosts")
-
-	var col := CollisionShape3D.new()
-	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.32
-	capsule.height = 1.7
-	col.shape = capsule
-	col.position = Vector3(0, 0.9, 0)
-	add_child(col)
-
-	_meshes = Node3D.new()
-	add_child(_meshes)
-	_stuck_last = global_position
 	floor_snap_length = 0.5
-	# Dark mass: near-invisible until a lamp or status pool touches it.
-	var torso := CSGCylinder3D.new()
-	torso.radius = 0.3
-	torso.height = 1.2
-	torso.position = Vector3(0, 1.05, 0)
-	torso.material = Mats.shadow()
-	_meshes.add_child(torso)
-	var head := CSGSphere3D.new()
-	head.radius = 0.17
-	head.position = Vector3(0, 1.8, 0.04)
-	head.material = Mats.shadow()
-	_meshes.add_child(head)
-	for side in [-1.0, 1.0]:
-		var arm := CSGBox3D.new()
-		arm.size = Vector3(0.1, 0.72, 0.1)
-		arm.position = Vector3(side * 0.32, 1.18, 0.06)
-		arm.rotation = Vector3(0.35, 0, side * 0.1)
-		arm.material = Mats.shadow()
-		_meshes.add_child(arm)
-
-	# The shadow stalker is a bigger, broader silhouette and casts only its
-	# shadow. The collision body stays normal-sized so it can use the halls.
-	if giant:
-		_meshes.scale = Vector3(2.0, 1.45, 2.0)
-		var mantle := CSGCylinder3D.new()
-		mantle.radius = 0.5
-		mantle.height = 0.5
-		mantle.position = Vector3(0, 1.55, 0)
-		mantle.material = Mats.shadow()
-		_meshes.add_child(mantle)
-	if shadow_only:
-		for child in _meshes.get_children():
-			if child is GeometryInstance3D:
-				child.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	# The body is authored in scenes/actors/host.tscn.
+	_meshes = $Meshes
+	_stuck_last = global_position
 	# The stalker's voice: one long sub-bass note, no footsteps. Its volume
 	# and pitch are driven from listener proximity in _update_visuals().
 	if low_hum:
@@ -171,7 +125,6 @@ func _ready() -> void:
 			_hum.position = Vector3(0, 1.2, 0)
 			add_child(_hum)
 			_hum.play()
-
 
 ## Main assigns waypoints (world positions) and calls reset() once placed.
 func reset() -> void:

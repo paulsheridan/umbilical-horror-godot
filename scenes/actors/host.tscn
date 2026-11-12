@@ -1,0 +1,43 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://src/host/host.gd" id="1_nfx1f"]
+[ext_resource type="Material" path="res://assets/materials/shadow.tres" id="2_j5sdj"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_un8nk"]
+radius = 0.32
+height = 1.7
+
+[node name="Host" type="CharacterBody3D" unique_id=157358034]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.12000001, 0)
+collision_layer = 8
+collision_mask = 5
+velocity = Vector3(0, -1.6000001, 0)
+floor_snap_length = 0.5
+script = ExtResource("1_nfx1f")
+
+[node name="@CollisionShape3D@2" type="CollisionShape3D" parent="." unique_id=1686753734]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("CapsuleShape3D_un8nk")
+
+[node name="Meshes" type="Node3D" parent="." unique_id=2135313816]
+
+[node name="@CSGCylinder3D@4" type="CSGCylinder3D" parent="Meshes" unique_id=297862247]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, 0)
+radius = 0.3
+height = 1.2
+material = ExtResource("2_j5sdj")
+
+[node name="@CSGSphere3D@5" type="CSGSphere3D" parent="Meshes" unique_id=1672355699]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0.04)
+radius = 0.17
+material = ExtResource("2_j5sdj")
+
+[node name="@CSGBox3D@6" type="CSGBox3D" parent="Meshes" unique_id=241079252]
+transform = Transform3D(0.9950042, 0.09983342, 0, -0.09378079, 0.9346798, -0.3428978, -0.03423266, 0.34118474, 0.9393727, -0.32, 1.18, 0.06)
+size = Vector3(0.1, 0.72, 0.1)
+material = ExtResource("2_j5sdj")
+
+[node name="@CSGBox3D@7" type="CSGBox3D" parent="Meshes" unique_id=468896665]
+transform = Transform3D(0.9950042, -0.09983342, 0, 0.09378079, 0.9346798, -0.3428978, 0.03423266, 0.34118474, 0.9393727, 0.32, 1.18, 0.06)
+size = Vector3(0.1, 0.72, 0.1)
+material = ExtResource("2_j5sdj")

@@ -15,7 +15,9 @@ Done:
   controllers; `main` and tests load scenes.
 - **Phase 3** — placement anchors (`Data/Anchors/*`) and marker metadata drive
   gameplay; room containers group the ship tree for editing.
-- **Phase 7 (partial)** — new `tests/level_scene` suite (22 checks).
+- **Phase 5 (partial)** — `scenes/actors/player.tscn` and `drone.tscn` are
+  editable prefabs; the environment is a shared `.tres`.
+- **Phase 7 (partial)** — new `tests/level_scene` suite (28 checks).
 - **Phase 8 (partial)** — `docs/editor-guide.md`, README workflow section.
 
 Deviations from the plan:
@@ -25,9 +27,9 @@ Deviations from the plan:
   level needs multi-person editing.
 - The one-time bake tooling and legacy builders were deleted after a parity
   check (319 nodes, 0 differences); the scenes are now the source of truth.
-- Total suite: **392 checks, 0 failures**.
+- Total suite: **398 checks, 0 failures**.
 
-Still open: actor/HUD scenes (5), `main.gd` decomposition and host base (6),
+Still open: host and HUD scenes (5), `main.gd` decomposition and host base (6),
 test helper/lint pass (7), remaining docs (8), and the actual room-file split
 (4) if wanted.
 

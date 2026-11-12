@@ -1,10 +1,12 @@
 extends CanvasLayer
 ## All 2D presentation for M0: vignette, soft crosshair, meters line, interact
-## prompt, message queue, title + pause overlays, F3 debug. Built fully in
-## code (hallway-demo pattern); tweak look & copy freely here.
+## prompt, message queue, title + pause overlays, F3 debug. Still built in
+## code; converting this to a HUD scene is the remaining UI work.
 
 signal start_clicked
 signal resume_clicked
+
+const MapView := preload("res://src/ui/map_view.gd")
 
 # Feed-snow shader: mixes a live screen grab with CRT static. Amount 0 passes
 # the picture through; 1 is total signal loss.
@@ -754,7 +756,7 @@ func hide_end_card() -> void:
 
 
 func _build_map() -> void:
-	_map_view = (load("res://src/ui/map_view.gd") as GDScript).new()
+	_map_view = MapView.new()
 	_map_view.visible = false
 	_map_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_map_view)

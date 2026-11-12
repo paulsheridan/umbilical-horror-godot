@@ -133,8 +133,9 @@ The ship and the bay are real scenes, not runtime-generated geometry:
 - `scenes/level/ship.tscn` — the ship, grouped into `Corridor`, `Junction`,
   `Spur`, `Galley`, `Annex`, `BerthWing`, `ProcessorWing`, `World` and `Data`.
 - `scenes/level/rooms/fab_bay.tscn` — the safe room.
-- `scenes/main.tscn` — entry point; still wires the player, HUD, hosts and
-  drones in code.
+- `scenes/actors/player.tscn`, `scenes/actors/drone.tscn` — editable prefabs.
+- `scenes/main.tscn` — entry point with the `WorldEnvironment`; the HUD and host
+  bodies are still wired in code.
 
 Open a level scene, move geometry and lights, and press F5. Placement that
 gameplay depends on lives in `Data/Anchors` markers (dock, camera site, food,
@@ -239,7 +240,7 @@ cover, moving radar mass, event lamp, proximity feed poisoning, rising hum,
 lurk/lunge, corner ambush), the visual-only loss wreck, the authored loss and
 recovery, hull bus, and the hand-copy map. The other suites add 19
 camera-loop, 29 patrol-soak, 14 host-AI-rule, 22 stalker-AI, 9 annex-loop,
-38 collector-AI, 26 processor-AI and 22 level-scene checks (392 in total).
+38 collector-AI, 26 processor-AI and 28 level-scene checks (398 in total).
 
 The **level scene** test is the editor contract: it loads the baked scenes,
 checks the controller wiring and anchors, verifies the baked hide/ambush/choke/

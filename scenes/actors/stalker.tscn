@@ -1,0 +1,337 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://src/host/stalker.gd" id="1_4gwyf"]
+[ext_resource type="Material" path="res://assets/materials/shadow.tres" id="2_0a2ku"]
+[ext_resource type="Material" path="res://assets/materials/bone.tres" id="3_tqo0e"]
+[ext_resource type="Material" path="res://assets/materials/cable.tres" id="4_my8vy"]
+[ext_resource type="Material" path="res://assets/materials/amber.tres" id="5_gj5br"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_5obtl"]
+radius = 0.34
+height = 1.8
+
+[node name="Stalker" type="CharacterBody3D" unique_id=1533538222]
+transform = Transform3D(0.112737276, 0, 0.9936248, 0, 1, 0, -0.9936248, 0, 0.112737276, 0, -0.12000001, 0)
+collision_layer = 8
+collision_mask = 5
+velocity = Vector3(0, -1.6000001, 0)
+floor_snap_length = 0.5
+script = ExtResource("1_4gwyf")
+
+[node name="@CollisionShape3D@2" type="CollisionShape3D" parent="." unique_id=609195909]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("CapsuleShape3D_5obtl")
+
+[node name="Rig" type="Node3D" parent="." unique_id=1179951126]
+
+[node name="Hips" type="Node3D" parent="Rig" unique_id=1172964693]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, 0)
+
+[node name="Torso" type="Node3D" parent="Rig/Hips" unique_id=598130853]
+transform = Transform3D(0.99986863, -0.016209353, 0, 0.0155780865, 0.9609292, 0.27635565, -0.004479546, -0.27631935, 0.96105546, 0, 0, 0)
+
+[node name="@CSGCylinder3D@6" type="CSGCylinder3D" parent="Rig/Hips/Torso" unique_id=512412117]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.575, 0)
+radius = 0.24
+height = 1.15
+material = ExtResource("2_0a2ku")
+
+[node name="@CSGBox3D@7" type="CSGBox3D" parent="Rig/Hips/Torso" unique_id=1698053621]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.58, -0.235)
+size = Vector3(0.055, 0.56, 0.055)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGBox3D@8" type="CSGBox3D" parent="Rig/Hips/Torso" unique_id=1850444846]
+transform = Transform3D(0.9540465, 0.25379694, -0.15931821, -0.25708055, 0.96638995, 0, 0.15396352, 0.040957615, 0.98722726, -0.16, 0.34, -0.205)
+size = Vector3(0.3, 0.032, 0.05)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGBox3D@9" type="CSGBox3D" parent="Rig/Hips/Torso" unique_id=1479726663]
+transform = Transform3D(0.9540465, -0.25379694, 0.15931821, 0.25708055, 0.96638995, 0, -0.15396352, 0.040957615, 0.98722726, 0.16, 0.34, -0.205)
+size = Vector3(0.3, 0.032, 0.05)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGBox3D@10" type="CSGBox3D" parent="Rig/Hips/Torso" unique_id=944274955]
+transform = Transform3D(0.9540465, 0.25379694, -0.15931821, -0.25708055, 0.96638995, 0, 0.15396352, 0.040957615, 0.98722726, -0.16, 0.52, -0.205)
+size = Vector3(0.3, 0.032, 0.05)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGBox3D@11" type="CSGBox3D" parent="Rig/Hips/Torso" unique_id=967956014]
+transform = Transform3D(0.9540465, -0.25379694, 0.15931821, 0.25708055, 0.96638995, 0, -0.15396352, 0.040957615, 0.98722726, 0.16, 0.52, -0.205)
+size = Vector3(0.3, 0.032, 0.05)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGBox3D@12" type="CSGBox3D" parent="Rig/Hips/Torso" unique_id=1765131824]
+transform = Transform3D(0.9540465, 0.25379694, -0.15931821, -0.25708055, 0.96638995, 0, 0.15396352, 0.040957615, 0.98722726, -0.16, 0.7, -0.205)
+size = Vector3(0.3, 0.032, 0.05)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGBox3D@13" type="CSGBox3D" parent="Rig/Hips/Torso" unique_id=2141276241]
+transform = Transform3D(0.9540465, -0.25379694, 0.15931821, 0.25708055, 0.96638995, 0, -0.15396352, 0.040957615, 0.98722726, 0.16, 0.7, -0.205)
+size = Vector3(0.3, 0.032, 0.05)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGBox3D@14" type="CSGBox3D" parent="Rig/Hips/Torso" unique_id=88325974]
+transform = Transform3D(0.9540465, 0.25379694, -0.15931821, -0.25708055, 0.96638995, 0, 0.15396352, 0.040957615, 0.98722726, -0.16, 0.88, -0.205)
+size = Vector3(0.3, 0.032, 0.05)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGBox3D@15" type="CSGBox3D" parent="Rig/Hips/Torso" unique_id=1454481951]
+transform = Transform3D(0.9540465, -0.25379694, 0.15931821, 0.25708055, 0.96638995, 0, -0.15396352, 0.040957615, 0.98722726, 0.16, 0.88, -0.205)
+size = Vector3(0.3, 0.032, 0.05)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@16" type="CSGCylinder3D" parent="Rig/Hips/Torso" unique_id=568127171]
+transform = Transform3D(0.99280864, -0.119712204, 0, 0.10205759, 0.8463937, -0.52268726, 0.06257204, 0.5189284, 0.8525245, 0, 0.36, 0.21)
+radius = 0.035
+height = 0.42
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@17" type="CSGCylinder3D" parent="Rig/Hips/Torso" unique_id=514682018]
+transform = Transform3D(0.99280864, 0.119712204, 0, -0.10205759, 0.8463937, -0.52268726, -0.06257204, 0.5189284, 0.8525245, 0, 0.54, 0.21)
+radius = 0.031
+height = 0.47
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@18" type="CSGCylinder3D" parent="Rig/Hips/Torso" unique_id=2104701119]
+transform = Transform3D(0.99280864, -0.119712204, 0, 0.10205759, 0.8463937, -0.52268726, 0.06257204, 0.5189284, 0.8525245, 0, 0.72, 0.21)
+radius = 0.027
+height = 0.52
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@19" type="CSGCylinder3D" parent="Rig/Hips/Torso" unique_id=509926357]
+transform = Transform3D(0.99280864, 0.119712204, 0, -0.10205759, 0.8463937, -0.52268726, -0.06257204, 0.5189284, 0.8525245, 0, 0.9, 0.21)
+radius = 0.023
+height = 0.57
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="Head" type="Node3D" parent="Rig/Hips/Torso" unique_id=1447977394]
+transform = Transform3D(0.9996236, -0.0009808545, 0.027417809, 0, 0.99936074, 0.035751488, -0.027435347, -0.035738032, 0.9989846, 0, 1.15, -0.02)
+
+[node name="@CSGSphere3D@21" type="CSGSphere3D" parent="Rig/Hips/Torso/Head" unique_id=464033489]
+transform = Transform3D(0.85, 0, 0, 0, 1.3327569, 0.1513523, 0, -0.21507959, 0.9378659, 0, 0, 0)
+radius = 0.21
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGBox3D@22" type="CSGBox3D" parent="Rig/Hips/Torso/Head" unique_id=1379165504]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.04, -0.18)
+size = Vector3(0.11, 0.3, 0.07)
+material = ExtResource("4_my8vy")
+
+[node name="@CSGSphere3D@23" type="CSGSphere3D" parent="Rig/Hips/Torso/Head" unique_id=1586725981]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.06, 0.04, -0.185)
+radius = 0.055
+material = ExtResource("4_my8vy")
+
+[node name="@CSGSphere3D@24" type="CSGSphere3D" parent="Rig/Hips/Torso/Head" unique_id=612990584]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.06, 0.04, -0.185)
+radius = 0.055
+material = ExtResource("4_my8vy")
+
+[node name="EyeL" type="CSGSphere3D" parent="Rig/Hips/Torso/Head" unique_id=1478792096]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.06, 0.04, -0.195)
+radius = 0.022
+material = ExtResource("5_gj5br")
+
+[node name="EyeR" type="CSGSphere3D" parent="Rig/Hips/Torso/Head" unique_id=562415863]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.06, 0.04, -0.195)
+radius = 0.022
+material = ExtResource("5_gj5br")
+
+[node name="@CSGCylinder3D@27" type="CSGCylinder3D" parent="Rig/Hips/Torso/Head" unique_id=1383486060]
+transform = Transform3D(0.99280864, 0.119712204, 0, -0.11777809, 0.9767685, 0.17902958, 0.021432025, -0.17774212, 0.9838437, -0.09, 0.23, 0.02)
+radius = 0.025
+height = 0.26
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@28" type="CSGCylinder3D" parent="Rig/Hips/Torso/Head" unique_id=83717183]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.23, 0.02)
+radius = 0.025
+height = 0.26
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@29" type="CSGCylinder3D" parent="Rig/Hips/Torso/Head" unique_id=2026004127]
+transform = Transform3D(0.99280864, -0.119712204, 0, 0.11777809, 0.9767685, -0.17902958, 0.021432025, 0.17774212, 0.9838437, 0.09, 0.23, 0.02)
+radius = 0.025
+height = 0.26
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="ArmL" type="Node3D" parent="Rig/Hips/Torso" unique_id=178253790]
+transform = Transform3D(1, 0, 0, 0, 0.9996375, -0.026923113, 0, 0.026923113, 0.9996375, -0.31, 0.95, 0)
+
+[node name="@CSGSphere3D@31" type="CSGSphere3D" parent="Rig/Hips/Torso/ArmL" unique_id=1201828385]
+radius = 0.09
+material = ExtResource("2_0a2ku")
+
+[node name="@CSGCylinder3D@32" type="CSGCylinder3D" parent="Rig/Hips/Torso/ArmL" unique_id=2001499562]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.31, 0)
+radius = 0.06
+height = 0.62
+material = ExtResource("2_0a2ku")
+
+[node name="ElbowL" type="Node3D" parent="Rig/Hips/Torso/ArmL" unique_id=1931667330]
+transform = Transform3D(1, 0, 0, 0, 0.9981653, 0.060547266, 0, -0.060547266, 0.9981653, 0, -0.62, 0)
+
+[node name="@CSGCylinder3D@34" type="CSGCylinder3D" parent="Rig/Hips/Torso/ArmL/ElbowL" unique_id=1049448140]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.33, 0)
+radius = 0.052
+height = 0.66
+material = ExtResource("2_0a2ku")
+
+[node name="@CSGCylinder3D@35" type="CSGCylinder3D" parent="Rig/Hips/Torso/ArmL/ElbowL" unique_id=1134272862]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.045, -0.73, 0.01)
+radius = 0.022
+height = 0.2
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@36" type="CSGCylinder3D" parent="Rig/Hips/Torso/ArmL/ElbowL" unique_id=337405514]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0, -0.73, 0.01)
+radius = 0.022
+height = 0.2
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@37" type="CSGCylinder3D" parent="Rig/Hips/Torso/ArmL/ElbowL" unique_id=692373006]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.045, -0.73, 0.01)
+radius = 0.022
+height = 0.2
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="ArmR" type="Node3D" parent="Rig/Hips/Torso" unique_id=915378796]
+transform = Transform3D(1, 0, 0, 0, 0.9996375, -0.026923113, 0, 0.026923113, 0.9996375, 0.31, 0.95, 0)
+
+[node name="@CSGSphere3D@39" type="CSGSphere3D" parent="Rig/Hips/Torso/ArmR" unique_id=2058432091]
+radius = 0.09
+material = ExtResource("2_0a2ku")
+
+[node name="@CSGCylinder3D@40" type="CSGCylinder3D" parent="Rig/Hips/Torso/ArmR" unique_id=1969069805]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.31, 0)
+radius = 0.06
+height = 0.62
+material = ExtResource("2_0a2ku")
+
+[node name="ElbowR" type="Node3D" parent="Rig/Hips/Torso/ArmR" unique_id=1919179360]
+transform = Transform3D(1, 0, 0, 0, 0.9981653, 0.060547266, 0, -0.060547266, 0.9981653, 0, -0.62, 0)
+
+[node name="@CSGCylinder3D@42" type="CSGCylinder3D" parent="Rig/Hips/Torso/ArmR/ElbowR" unique_id=1419868411]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.33, 0)
+radius = 0.052
+height = 0.66
+material = ExtResource("2_0a2ku")
+
+[node name="@CSGCylinder3D@43" type="CSGCylinder3D" parent="Rig/Hips/Torso/ArmR/ElbowR" unique_id=1886723531]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.045, -0.73, 0.01)
+radius = 0.022
+height = 0.2
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@44" type="CSGCylinder3D" parent="Rig/Hips/Torso/ArmR/ElbowR" unique_id=675109610]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0, -0.73, 0.01)
+radius = 0.022
+height = 0.2
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@45" type="CSGCylinder3D" parent="Rig/Hips/Torso/ArmR/ElbowR" unique_id=735630794]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.045, -0.73, 0.01)
+radius = 0.022
+height = 0.2
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="Core" type="CSGSphere3D" parent="Rig/Hips/Torso" unique_id=405231712]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.62, -0.14)
+radius = 0.055
+material = ExtResource("5_gj5br")
+
+[node name="LegL" type="Node3D" parent="Rig/Hips" unique_id=743282821]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.17, 0, 0)
+
+[node name="@CSGSphere3D@47" type="CSGSphere3D" parent="Rig/Hips/LegL" unique_id=863672061]
+radius = 0.1
+material = ExtResource("2_0a2ku")
+
+[node name="@CSGCylinder3D@48" type="CSGCylinder3D" parent="Rig/Hips/LegL" unique_id=36421963]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.26, 0)
+radius = 0.085
+height = 0.52
+material = ExtResource("2_0a2ku")
+
+[node name="KneeL" type="Node3D" parent="Rig/Hips/LegL" unique_id=280421949]
+transform = Transform3D(1, 0, 0, 0, 0.99766546, -0.06829074, 0, 0.06829074, 0.99766546, 0, -0.52, 0)
+
+[node name="@CSGCylinder3D@50" type="CSGCylinder3D" parent="Rig/Hips/LegL/KneeL" unique_id=63159785]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.24, 0)
+radius = 0.07
+height = 0.48
+material = ExtResource("2_0a2ku")
+
+[node name="@CSGBox3D@51" type="CSGBox3D" parent="Rig/Hips/LegL/KneeL" unique_id=1137246816]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, -0.1)
+size = Vector3(0.13, 0.06, 0.28)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@52" type="CSGCylinder3D" parent="Rig/Hips/LegL/KneeL" unique_id=346033555]
+transform = Transform3D(1, 0, 0, 0, 0.120502725, -0.992713, 0, 0.992713, 0.120502725, -0.04, -0.55, -0.22)
+radius = 0.02
+height = 0.18
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@53" type="CSGCylinder3D" parent="Rig/Hips/LegL/KneeL" unique_id=2129708108]
+transform = Transform3D(1, 0, 0, 0, 0.120502725, -0.992713, 0, 0.992713, 0.120502725, 0.04, -0.55, -0.22)
+radius = 0.02
+height = 0.18
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="LegR" type="Node3D" parent="Rig/Hips" unique_id=693664932]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.17, 0, 0)
+
+[node name="@CSGSphere3D@55" type="CSGSphere3D" parent="Rig/Hips/LegR" unique_id=1994027391]
+radius = 0.1
+material = ExtResource("2_0a2ku")
+
+[node name="@CSGCylinder3D@56" type="CSGCylinder3D" parent="Rig/Hips/LegR" unique_id=2082160411]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.26, 0)
+radius = 0.085
+height = 0.52
+material = ExtResource("2_0a2ku")
+
+[node name="KneeR" type="Node3D" parent="Rig/Hips/LegR" unique_id=1639901465]
+transform = Transform3D(1, 0, 0, 0, 0.99766546, -0.06829074, 0, 0.06829074, 0.99766546, 0, -0.52, 0)
+
+[node name="@CSGCylinder3D@58" type="CSGCylinder3D" parent="Rig/Hips/LegR/KneeR" unique_id=655085249]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.24, 0)
+radius = 0.07
+height = 0.48
+material = ExtResource("2_0a2ku")
+
+[node name="@CSGBox3D@59" type="CSGBox3D" parent="Rig/Hips/LegR/KneeR" unique_id=291982299]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, -0.1)
+size = Vector3(0.13, 0.06, 0.28)
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@60" type="CSGCylinder3D" parent="Rig/Hips/LegR/KneeR" unique_id=1271920615]
+transform = Transform3D(1, 0, 0, 0, 0.120502725, -0.992713, 0, 0.992713, 0.120502725, -0.04, -0.55, -0.22)
+radius = 0.02
+height = 0.18
+cone = true
+material = ExtResource("3_tqo0e")
+
+[node name="@CSGCylinder3D@61" type="CSGCylinder3D" parent="Rig/Hips/LegR/KneeR" unique_id=1963362577]
+transform = Transform3D(1, 0, 0, 0, 0.120502725, -0.992713, 0, 0.992713, 0.120502725, 0.04, -0.55, -0.22)
+radius = 0.02
+height = 0.18
+cone = true
+material = ExtResource("3_tqo0e")

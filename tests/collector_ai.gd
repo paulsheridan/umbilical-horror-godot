@@ -5,8 +5,8 @@ extends Node3D
 ## Run: godot --headless --path . res://tests/collector_ai.tscn
 
 const SHIP_SCENE := preload("res://scenes/level/ship.tscn")
-const COLLECTOR := preload("res://src/host/collector.gd")
-const STALKER := preload("res://src/host/stalker.gd")
+const COLLECTOR_SCENE := preload("res://scenes/actors/collector.tscn")
+const STALKER_SCENE := preload("res://scenes/actors/stalker.tscn")
 
 class DummyBot extends CharacterBody3D:
 	var carried := false
@@ -82,8 +82,7 @@ func _run() -> void:
 	_check(door["settled"], "the door settles open")
 
 	# --- Collector ---------------------------------------------------------
-	collector = CharacterBody3D.new()
-	collector.set_script(COLLECTOR)
+	collector = COLLECTOR_SCENE.instantiate()
 	add_child(collector)
 	collector.global_position = Vector3(0, 0.2, 0)
 	await _wait(1)
@@ -190,8 +189,7 @@ func _run() -> void:
 	bot.queue_free()
 
 	# --- Stalker choke routing --------------------------------------------
-	var stalker := CharacterBody3D.new()
-	stalker.set_script(STALKER)
+	var stalker := STALKER_SCENE.instantiate()
 	add_child(stalker)
 	stalker.chokes = ship.chokes
 	stalker.set_physics_process(false)

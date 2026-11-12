@@ -5,7 +5,7 @@ extends Node3D
 ##
 ## Run: godot --headless --path . res://tests/stalker_ai.tscn
 
-const STALKER := preload("res://src/host/stalker.gd")
+const STALKER_SCENE := preload("res://scenes/actors/stalker.tscn")
 const DRONE := preload("res://src/drone/drone.gd")
 
 var stalker: CharacterBody3D
@@ -43,8 +43,7 @@ func _run() -> void:
 	drone.global_position = Vector3(0, 0.32, 0)
 	drone.velocity = Vector3.ZERO
 
-	stalker = CharacterBody3D.new()
-	stalker.set_script(STALKER)
+	stalker = STALKER_SCENE.instantiate()
 	add_child(stalker)
 	stalker.global_position = Vector3(0, 0.2, 4)
 	stalker.rotation.y = 0.0

@@ -13,8 +13,6 @@ signal drone_caught
 
 enum State { IDLE, TELEGRAPH, REACH, RETRACT, DEVOUR }
 
-const Mats := preload("res://src/mats.gd")
-
 const SIGHT_RANGE := 15.0
 const SIGHT_FOV := 145.0
 const EYE_HEIGHT := 2.45
@@ -78,15 +76,20 @@ func _ready() -> void:
 	collision_mask = 1 | 4
 	add_to_group("hosts")
 	floor_snap_length = 0.5
-	var col := CollisionShape3D.new()
-	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.75
-	capsule.height = 2.6
-	col.shape = capsule
-	col.position = Vector3(0, 1.3, 0)
-	add_child(col)
-	_build_body()
+	# The body is authored in scenes/actors/processor.tscn.
+	_resolve_body()
 	reset()
+
+
+func _resolve_body() -> void:
+	_rig = $Rig
+	_jaw = _rig.get_node("Jaw")
+	_mouth_glow = _rig.get_node("MouthGlow")
+	_arm_pivots = [_rig.get_node("ArmL"), _rig.get_node("ArmR")]
+	_arm_meshes = [(_arm_pivots[0] as Node).get_node("Arm"),
+			(_arm_pivots[1] as Node).get_node("Arm")]
+	_hands = [(_arm_pivots[0] as Node).get_node("Hand"),
+			(_arm_pivots[1] as Node).get_node("Hand")]
 
 
 func reset() -> void:
@@ -378,138 +381,3 @@ func _animate(delta: float) -> void:
 		if state == State.TELEGRAPH or state == State.REACH:
 			pulse += 0.45
 		_mouth_glow.light_energy = pulse
-
-
-func _build_body() -> void:
-	var flesh := Mats.flesh()
-	var dark := Mats.shadow()
-	var bone := Mats.bone()
-	var gristle := Mats.cable()
-
-	_rig = Node3D.new()
-	add_child(_rig)
-
-	# Two pinned legs: thick columns bolted to the deck, feet splayed forward.
-	for side in [-1.0, 1.0]:
-		var hip := Vector3(side * 0.64, 1.62, 0.18)
-		var knee := Vector3(side * 0.78, 0.86, -0.10)
-		var ankle := Vector3(side * 0.82, 0.20, -0.30)
-		_limb(hip, knee, 0.25, flesh)
-		_limb(knee, ankle, 0.19, flesh)
-		_part_box(_rig, Vector3(0.58, 0.22, 0.92),
-				Vector3(side * 0.82, 0.12, -0.34), bone)
-		# A shackle and bolt at each ankle: it is pinned, not standing.
-		_part_box(_rig, Vector3(0.34, 0.12, 0.34),
-				Vector3(side * 0.82, 0.46, -0.18), dark)
-		_part_box(_rig, Vector3(0.10, 0.30, 0.10),
-				Vector3(side * 1.06, 0.15, 0.18), gristle)
-
-	# The maw: a huge wet mass with a black opening, a bone upper lip and a
-	# hinged lower jaw carrying its own row of teeth.
-	var mass := _part_sphere(_rig, 1.0, Vector3(0, 2.48, 0.06),
-			Vector3(1.38, 1.55, 1.05), flesh)
-	mass.rotation.x = -0.10
-	_part_sphere(_rig, 0.78, Vector3(0, 2.92, 0.30),
-			Vector3(1.05, 0.85, 0.85), dark)
-	# The black throat, proud of the face so it reads from the hall mouth.
-	_part_box(_rig, Vector3(1.52, 0.74, 0.26), Vector3(0, 2.27, -0.86), dark)
-	_part_box(_rig, Vector3(0.82, 0.44, 0.22), Vector3(0, 2.24, -1.00), gristle)
-	# Upper lip and teeth.
-	_part_box(_rig, Vector3(1.70, 0.13, 0.24), Vector3(0, 2.66, -0.91), bone)
-	for i in 7:
-		var x := -0.66 + 0.22 * float(i)
-		_part_box(_rig, Vector3(0.10, 0.22, 0.10),
-				Vector3(x, 2.54, -0.95), bone)
-
-	_jaw = Node3D.new()
-	_jaw.position = Vector3(0, 2.06, -0.56)
-	_rig.add_child(_jaw)
-	_part_box(_jaw, Vector3(1.46, 0.20, 0.70), Vector3(0, -0.04, -0.30), flesh)
-	_part_box(_jaw, Vector3(1.30, 0.09, 0.54), Vector3(0, 0.07, -0.31), dark)
-	for i in 7:
-		var x := -0.54 + 0.18 * float(i)
-		_part_box(_jaw, Vector3(0.09, 0.19, 0.09),
-				Vector3(x, 0.15, -0.40), bone)
-
-	# Shoulders and the two gaunt telescoping arms with cube hands.
-	for i in 2:
-		var shoulder := SHOULDER_L if i == 0 else SHOULDER_R
-		var pivot := Node3D.new()
-		pivot.position = shoulder
-		_rig.add_child(pivot)
-		var mesh := CSGBox3D.new()
-		mesh.size = Vector3(0.17, 0.17, 1.0)
-		mesh.position = Vector3(0, 0, -0.5)
-		mesh.material = flesh
-		pivot.add_child(mesh)
-		# A long pale forearm plate along the arm, and a black knuckle band.
-		var plate := CSGBox3D.new()
-		plate.size = Vector3(0.22, 0.06, 0.72)
-		plate.position = Vector3(0, 0.12, -0.42)
-		plate.material = bone
-		pivot.add_child(plate)
-		var hand := CSGBox3D.new()
-		hand.size = Vector3(0.55, 0.55, 0.55)
-		hand.position = Vector3(0, 0, -1.0)
-		hand.material = dark
-		pivot.add_child(hand)
-		var knuckle := CSGBox3D.new()
-		knuckle.size = Vector3(0.60, 0.10, 0.16)
-		knuckle.position = Vector3(0, 0.14, -0.86)
-		knuckle.material = bone
-		pivot.add_child(knuckle)
-		_arm_pivots.append(pivot)
-		_arm_meshes.append(mesh)
-		_hands.append(hand)
-
-	# The only light in the chamber: the wet orange of the mouth.
-	_mouth_glow = OmniLight3D.new()
-	_mouth_glow.light_color = Color(1.0, 0.26, 0.13)
-	_mouth_glow.light_energy = 0.65
-	_mouth_glow.omni_range = 4.4
-	_mouth_glow.omni_attenuation = 1.4
-	_mouth_glow.shadow_enabled = true
-	_mouth_glow.position = Vector3(0, 2.25, -1.15)
-	_rig.add_child(_mouth_glow)
-
-	# A couple of bone shards caught in the shoulders, so the silhouette is
-	# not just a smooth blob in the dark.
-	for side in [-1.0, 1.0]:
-		var shard := _part_box(_rig, Vector3(0.10, 0.46, 0.10),
-				Vector3(side * 0.92, 2.86, 0.10), bone)
-		shard.rotation = Vector3(0.3, 0.2 * side, 0.45 * side)
-
-
-func _limb(a: Vector3, b: Vector3, radius: float, mat: StandardMaterial3D) -> Node3D:
-	var pivot := Node3D.new()
-	_rig.add_child(pivot)
-	pivot.position = a
-	var length := a.distance_to(b)
-	pivot.look_at(_rig.to_global(b), Vector3.UP)
-	var mesh := CSGBox3D.new()
-	mesh.size = Vector3(radius * 2.0, radius * 2.0, length)
-	mesh.position = Vector3(0, 0, -length * 0.5)
-	mesh.material = mat
-	pivot.add_child(mesh)
-	return pivot
-
-
-func _part_box(parent: Node3D, size: Vector3, pos: Vector3,
-		mat: StandardMaterial3D) -> CSGBox3D:
-	var b := CSGBox3D.new()
-	b.size = size
-	b.position = pos
-	b.material = mat
-	parent.add_child(b)
-	return b
-
-
-func _part_sphere(parent: Node3D, radius: float, pos: Vector3,
-		scale_v: Vector3, mat: StandardMaterial3D) -> CSGSphere3D:
-	var s := CSGSphere3D.new()
-	s.radius = radius
-	s.position = pos
-	s.scale = scale_v
-	s.material = mat
-	parent.add_child(s)
-	return s

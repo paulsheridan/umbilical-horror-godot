@@ -22,10 +22,12 @@ const DRONE := preload("res://src/drone/drone.gd")
 const DRONE_SCENE := preload("res://scenes/actors/drone.tscn")
 const PLAYER_SCENE := preload("res://scenes/actors/player.tscn")
 const SCANNER := preload("res://src/ui/scanner.gd")
-const HOST := preload("res://src/host/host.gd")
-const STALKER := preload("res://src/host/stalker.gd")
-const COLLECTOR := preload("res://src/host/collector.gd")
-const PROCESSOR := preload("res://src/host/processor.gd")
+const HUD := preload("res://src/ui/hud.gd")
+const MAP_VIEW := preload("res://src/ui/map_view.gd")
+const HOST_SCENE := preload("res://scenes/actors/host.tscn")
+const STALKER_SCENE := preload("res://scenes/actors/stalker.tscn")
+const COLLECTOR_SCENE := preload("res://scenes/actors/collector.tscn")
+const PROCESSOR_SCENE := preload("res://scenes/actors/processor.tscn")
 
 var level
 var ship
@@ -178,7 +180,7 @@ func _ready() -> void:
 	_spawn_processor()
 
 	hud = CanvasLayer.new()
-	hud.set_script(load("res://src/ui/hud.gd"))
+	hud.set_script(HUD)
 	add_child(hud)
 	hud.start_clicked.connect(_on_start_clicked)
 	hud.resume_clicked.connect(_on_resume_clicked)
@@ -514,7 +516,7 @@ func _setup_table_map() -> void:
 	var vp := SubViewport.new()
 	vp.size = Vector2i(512, 256)
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	_table_map = (load("res://src/ui/map_view.gd") as GDScript).new()
+	_table_map = MAP_VIEW.new()
 	_table_map.size = Vector2(512, 256)
 	_table_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_table_map.fit_to(512, 256)
@@ -655,8 +657,7 @@ func _spawn_hosts() -> void:
 
 
 func _host(pos: Vector3, waypoints: Array) -> void:
-	var host := CharacterBody3D.new()
-	host.set_script(HOST)
+	var host := HOST_SCENE.instantiate()
 	add_child(host)
 	host.global_position = pos
 	host.waypoints = waypoints
@@ -673,8 +674,7 @@ func _host(pos: Vector3, waypoints: Array) -> void:
 func _spawn_collector() -> void:
 	if collector != null and is_instance_valid(collector):
 		return
-	collector = CharacterBody3D.new()
-	collector.set_script(COLLECTOR)
+	collector = COLLECTOR_SCENE.instantiate()
 	add_child(collector)
 	# Its home is still the old ossuary; only the deposit target moved to the
 	# Processor pile, so the loop threads the new hall every pass.
@@ -703,8 +703,7 @@ func _spawn_collector() -> void:
 func _spawn_processor() -> void:
 	if processor != null and is_instance_valid(processor):
 		return
-	processor = CharacterBody3D.new()
-	processor.set_script(PROCESSOR)
+	processor = PROCESSOR_SCENE.instantiate()
 	add_child(processor)
 	processor.global_position = Vector3(ship.PROCESSOR_POS.x, 0.0,
 			ship.PROCESSOR_POS.z)
@@ -735,8 +734,7 @@ func _on_bot_delivered(bot) -> void:
 func _spawn_m4_stalker() -> void:
 	if _m4_host != null and is_instance_valid(_m4_host):
 		return
-	var stalker = CharacterBody3D.new()
-	stalker.set_script(STALKER)
+	var stalker = STALKER_SCENE.instantiate()
 	add_child(stalker)
 	var spawn_pt: Vector3 = STALKER_PATROL[0]
 	stalker.global_position = Vector3(spawn_pt.x, 0.2, spawn_pt.z)

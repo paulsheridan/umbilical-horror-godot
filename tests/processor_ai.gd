@@ -6,7 +6,7 @@ extends Node3D
 ## Run: godot --headless --path . res://tests/processor_ai.tscn
 
 const SHIP_SCENE := preload("res://scenes/level/ship.tscn")
-const PROCESSOR := preload("res://src/host/processor.gd")
+const PROCESSOR_SCENE := preload("res://scenes/actors/processor.tscn")
 
 class DummyBot extends CharacterBody3D:
 	var carried := false
@@ -63,8 +63,7 @@ func _run() -> void:
 			"the hall has solid north/south walls")
 
 	# --- Body --------------------------------------------------------------
-	processor = CharacterBody3D.new()
-	processor.set_script(PROCESSOR)
+	processor = PROCESSOR_SCENE.instantiate()
 	add_child(processor)
 	processor.global_position = Vector3(ship.PROCESSOR_POS.x, 0.0,
 			ship.PROCESSOR_POS.z)

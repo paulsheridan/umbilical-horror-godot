@@ -80,17 +80,21 @@ func _ready() -> void:
 	collision_mask = 1 | 4
 	add_to_group("hosts")
 	floor_snap_length = 0.5
-
-	var col := CollisionShape3D.new()
-	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.30
-	capsule.height = 1.6
-	col.shape = capsule
-	col.position = Vector3(0, 0.8, 0)
-	add_child(col)
-
-	_build_body()
+	# The body is authored in scenes/actors/collector.tscn.
+	_resolve_body()
 	_stuck_last = global_position
+
+
+func _resolve_body() -> void:
+	_rig = $Rig
+	_hips = $Rig/Hips
+	_head = $Rig/Hips/Head
+	_arm_l = $Rig/Hips/ArmL
+	_arm_r = $Rig/Hips/ArmR
+	_leg_l = $Rig/Hips/LegL
+	_leg_r = $Rig/Hips/LegR
+	_sack = $Rig/Hips/Sack
+	_lantern = $Rig/Hips/LanternHand/Lantern
 
 
 func reset() -> void:
@@ -413,117 +417,3 @@ func _animate(delta: float) -> void:
 		_head.rotation.x = 0.12 + sin(_gait * 0.6) * 0.05
 	if _sack != null and _sack.visible:
 		_sack.rotation.z = sin(_gait * 0.8) * 0.06
-
-
-func _build_body() -> void:
-	var pale := Mats.bone()
-	var dark := Mats.shadow()
-	var cloth := Mats.paper()
-	var amber := Mats.amber()
-
-	_rig = Node3D.new()
-	add_child(_rig)
-
-	_hips = Node3D.new()
-	_hips.position = Vector3(0, 0.86, 0)
-	_rig.add_child(_hips)
-
-	# Hunched trunk and a low, forward head: it is always looking at the floor.
-	var torso := CSGCylinder3D.new()
-	torso.radius = 0.20
-	torso.height = 0.78
-	torso.position = Vector3(0, 0.33, 0.02)
-	torso.rotation = Vector3(-0.22, 0, 0)
-	torso.material = cloth
-	_hips.add_child(torso)
-	var rib := CSGBox3D.new()
-	rib.size = Vector3(0.30, 0.06, 0.05)
-	rib.position = Vector3(0, 0.26, -0.20)
-	rib.material = pale
-	_hips.add_child(rib)
-
-	_head = Node3D.new()
-	_head.position = Vector3(0, 0.72, -0.10)
-	_hips.add_child(_head)
-	var skull := CSGSphere3D.new()
-	skull.radius = 0.145
-	skull.scale = Vector3(0.9, 1.2, 1.0)
-	skull.material = pale
-	_head.add_child(skull)
-	var jaw := CSGBox3D.new()
-	jaw.size = Vector3(0.13, 0.16, 0.07)
-	jaw.position = Vector3(0, -0.08, -0.12)
-	jaw.material = dark
-	_head.add_child(jaw)
-
-	for side in [-1.0, 1.0]:
-		var arm := Node3D.new()
-		arm.position = Vector3(side * 0.24, 0.50, -0.02)
-		_hips.add_child(arm)
-		var upper := CSGBox3D.new()
-		upper.size = Vector3(0.09, 0.56, 0.09)
-		upper.position = Vector3(0, -0.28, 0)
-		upper.material = pale
-		arm.add_child(upper)
-		var hand := CSGBox3D.new()
-		hand.size = Vector3(0.11, 0.12, 0.13)
-		hand.position = Vector3(0, -0.60, -0.03)
-		hand.material = dark
-		arm.add_child(hand)
-		if side < 0.0:
-			_arm_l = arm
-		else:
-			_arm_r = arm
-
-	# It drags a lamp low, so the floor and the parts are always lit.
-	var lantern_hand := Node3D.new()
-	lantern_hand.position = Vector3(0.24, 0.14, -0.08)
-	_hips.add_child(lantern_hand)
-	var cage := CSGSphere3D.new()
-	cage.radius = 0.09
-	cage.material = amber
-	lantern_hand.add_child(cage)
-	_lantern = OmniLight3D.new()
-	_lantern.light_color = Color(1.0, 0.62, 0.30)
-	_lantern.light_energy = 0.55
-	_lantern.omni_range = 3.6
-	_lantern.omni_attenuation = 1.6
-	_lantern.shadow_enabled = true
-	lantern_hand.add_child(_lantern)
-
-	# Legs: short and bent, so the whole body is a low silhouette.
-	for side in [-1.0, 1.0]:
-		var leg := Node3D.new()
-		leg.position = Vector3(side * 0.12, 0.62, 0)
-		_hips.add_child(leg)
-		var shin := CSGBox3D.new()
-		shin.size = Vector3(0.11, 0.62, 0.11)
-		shin.position = Vector3(0, -0.31, 0)
-		shin.material = dark
-		leg.add_child(shin)
-		var foot := CSGBox3D.new()
-		foot.size = Vector3(0.13, 0.08, 0.26)
-		foot.position = Vector3(0, -0.60, -0.07)
-		foot.material = pale
-		leg.add_child(foot)
-		if side < 0.0:
-			_leg_l = leg
-		else:
-			_leg_r = leg
-
-	# The drag sack: a heavy lump on its back, visible only while carrying.
-	_sack = Node3D.new()
-	_sack.position = Vector3(0, 0.34, 0.24)
-	_hips.add_child(_sack)
-	var bag := CSGSphere3D.new()
-	bag.radius = 0.22
-	bag.scale = Vector3(0.9, 1.15, 0.95)
-	bag.material = cloth
-	_sack.add_child(bag)
-	var knot := CSGCylinder3D.new()
-	knot.radius = 0.05
-	knot.height = 0.14
-	knot.position = Vector3(0, 0.24, 0)
-	knot.material = dark
-	_sack.add_child(knot)
-	_sack.visible = false

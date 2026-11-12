@@ -5,7 +5,7 @@ extends Node3D
 ##
 ## Run: godot --headless --path . res://tests/host_ai_rules.tscn
 
-const HOST := preload("res://src/host/host.gd")
+const HOST_SCENE := preload("res://scenes/actors/host.tscn")
 const DRONE := preload("res://src/drone/drone.gd")
 
 var host: CharacterBody3D
@@ -55,8 +55,7 @@ func _run() -> void:
 	add_child(drone)
 	drone.global_position = Vector3(0, 0.32, -2)
 
-	host = CharacterBody3D.new()
-	host.set_script(HOST)
+	host = HOST_SCENE.instantiate()
 	add_child(host)
 	host.global_position = Vector3(0, 0.2, 2)
 	host.waypoints = [Vector3(0, 0, 2)]
