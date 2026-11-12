@@ -1,8 +1,35 @@
 # Editor-first refactor plan
 
-Status: **proposed — not started**
+Status: **Phases 0–3 complete; Phases 4–8 pending.**
 Goal: make UMBILICAL a project you can open and build in the Godot editor, and
 leave the code clean and DRY without changing gameplay.
+
+## Progress (current branch `refactor/editor-level`)
+
+Done:
+
+- **Phase 0** — branch/tag, `tools/run_tests.sh`, Godot 4.7 metadata.
+- **Phase 1** — material palette exported to `assets/materials/*.tres`.
+- **Phase 2** — geometry baked to `scenes/level/ship.tscn` (371 nodes) and
+  `scenes/level/rooms/fab_bay.tscn` (70 nodes); builders replaced by thin
+  controllers; `main` and tests load scenes.
+- **Phase 3** — placement anchors (`Data/Anchors/*`) and marker metadata drive
+  gameplay; room containers group the ship tree for editing.
+- **Phase 7 (partial)** — new `tests/level_scene` suite (22 checks).
+- **Phase 8 (partial)** — `docs/editor-guide.md`, README workflow section.
+
+Deviations from the plan:
+
+- Room **file** split (Phase 4) was replaced by in-scene room containers. The
+  scene is already navigable; splitting into room files can wait until the
+  level needs multi-person editing.
+- The one-time bake tooling and legacy builders were deleted after a parity
+  check (319 nodes, 0 differences); the scenes are now the source of truth.
+- Total suite: **392 checks, 0 failures**.
+
+Still open: actor/HUD scenes (5), `main.gd` decomposition and host base (6),
+test helper/lint pass (7), remaining docs (8), and the actual room-file split
+(4) if wanted.
 
 ---
 

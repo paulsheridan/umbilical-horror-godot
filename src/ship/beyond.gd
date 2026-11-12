@@ -1,7 +1,7 @@
 extends Node3D
-## The ship beyond the bay: what only drones reach. Built additive behind the
-## fab bay's north wall (the bay shell stays untouched — the wall simply
-## backs the vestibule).
+## The ship beyond the bay: what only drones reach. Geometry is authored in
+## `scenes/level/ship.tscn` (grouped into room containers); this controller
+## owns doors, the loss wreck, and the gameplay data baked onto the scene.
 ##
 ## M1 layout (all graybox, unlit on purpose — the drone's status lamp and
 ## the scanner are the only eyes). Convention: z0 = the *north* (more
@@ -55,22 +55,6 @@ var FOOD_POS := Vector3(-18.5, 0.35, -32.7)
 var CAMERA_POS := Vector3(6.45, 0.45, -29.75)  # video module on the wreck
 
 # --- East annex (M6): donut + cafeteria -----------------------------------
-const RING_X0 := 4.6          # junction east wall / west ring outer face
-const RING_X1 := 21.0         # outer east face
-const RING_Z0 := -31.4        # north ring outer face
-const RING_Z1 := -16.0        # south ring outer face
-const CAFE_X0 := 6.2          # cafeteria west face
-const CAFE_X1 := 19.2         # cafeteria east face
-const CAFE_Z0 := -28.4        # cafeteria north face
-const CAFE_Z1 := -17.6        # cafeteria south face
-const CAFE_DOOR_N0 := 11.0    # north arch (x span)
-const CAFE_DOOR_N1 := 17.0
-const CAFE_DOOR_S0 := 9.0     # south arch (x span)
-const CAFE_DOOR_S1 := 15.0
-const CAFE_DOOR_W0 := -25.0   # west arch (z span)
-const CAFE_DOOR_W1 := -21.0
-const CAFE_DOOR_E0 := -25.4   # east arch (z span)
-const CAFE_DOOR_E1 := -21.0
 
 # --- Berth wing (M6b): the crew's rooms, south of the annex ring -----------
 #   link W   x 7.6..9.6,  z -16.0..-13.0  normal mouth into the south ring
@@ -78,14 +62,6 @@ const CAFE_DOOR_E1 := -21.0
 #   link E   x 16.6..18.6,z -16.0..-13.0  normal mouth (the big bodies' route)
 #   hall     x 7.0..21.0, z -13.0..-10.4  berth corridor
 #   cabins   z -10.4..-6.0: three berths + the Collector's ossuary
-const BERTH_X0 := 7.0
-const BERTH_X1 := 21.0
-const BERTH_Z0 := -16.0
-const BERTH_Z1 := -6.0
-const BERTH_HALL_Z0 := -13.0
-const BERTH_HALL_Z1 := -10.4
-const CRAWL_X0 := 12.4
-const CRAWL_X1 := 14.0
 # The one movable deposit point for the Collector's old nest. Change this
 # vector (and the matching nest geometry in _ossuary) to move the hoard.
 var COLLECTOR_DEPOSIT := Vector3(19.8, 0.0, -7.2)
@@ -94,12 +70,6 @@ var COLLECTOR_DEPOSIT := Vector3(19.8, 0.0, -7.2)
 # A long dark hall east of the berth hall, ending in the feed chamber.
 const PROC_HALL_X0 := 21.0
 const PROC_HALL_X1 := 28.0
-const PROC_HALL_Z0 := -13.0
-const PROC_HALL_Z1 := -10.4
-const PROC_ROOM_X0 := 28.0
-const PROC_ROOM_X1 := 33.0
-const PROC_ROOM_Z0 := -15.4
-const PROC_ROOM_Z1 := -8.0
 # The Processor is pinned against the chamber's east wall. The pile the
 # Collector now feeds sits between it and the hall mouth.
 var PROCESSOR_POS := Vector3(32.1, 0.0, -11.7)

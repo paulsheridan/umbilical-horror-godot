@@ -120,11 +120,27 @@ moves. You pilot remote drones built from salvage to scrounge what you need.
 
 ## Run
 
-With Godot 4.4+ installed:
+With **Godot 4.7+** installed:
 
     godot --path .
 
 or open this folder in the Godot editor and press F5.
+
+## Editing the level
+
+The ship and the bay are real scenes, not runtime-generated geometry:
+
+- `scenes/level/ship.tscn` — the ship, grouped into `Corridor`, `Junction`,
+  `Spur`, `Galley`, `Annex`, `BerthWing`, `ProcessorWing`, `World` and `Data`.
+- `scenes/level/rooms/fab_bay.tscn` — the safe room.
+- `scenes/main.tscn` — entry point; still wires the player, HUD, hosts and
+  drones in code.
+
+Open a level scene, move geometry and lights, and press F5. Placement that
+gameplay depends on lives in `Data/Anchors` markers (dock, camera site, food,
+Processor pile, Collector deposit, …) and in `Data/HideSpot*`,
+`AmbushSpot*`, `Choke*` markers. See `docs/editor-guide.md` for the node map,
+the collision rules and how to add props or move gameplay.
 
 ## Controls
 
@@ -208,6 +224,9 @@ At the fabricator:  E installs a recovered video module; the live feed wakes on 
     godot --headless --path . res://tests/annex_loop.tscn
     godot --headless --path . res://tests/collector_ai.tscn
     godot --headless --path . res://tests/processor_ai.tscn
+    godot --headless --path . res://tests/level_scene.tscn
+
+    # or: tools/run_tests.sh
 
 213 checks in the main autotest: shell, FPS + tank controls, one-at-a-time
 fleet deployment (B spawns exactly one chassis, Q/1-2 link transfer, per-bot
@@ -220,7 +239,12 @@ cover, moving radar mass, event lamp, proximity feed poisoning, rising hum,
 lurk/lunge, corner ambush), the visual-only loss wreck, the authored loss and
 recovery, hull bus, and the hand-copy map. The other suites add 19
 camera-loop, 29 patrol-soak, 14 host-AI-rule, 22 stalker-AI, 9 annex-loop,
-38 collector-AI and 26 processor-AI checks (370 in total).
+38 collector-AI, 26 processor-AI and 22 level-scene checks (392 in total).
+
+The **level scene** test is the editor contract: it loads the baked scenes,
+checks the controller wiring and anchors, verifies the baked hide/ambush/choke/
+door/remains data, confirms geometry references shared palette resources, and
+proves that moving an anchor marker changes the runtime value.
 
 The **fleet** starts as one crawler on the hatch cradle. `B` deploys another
 one at a time (up to `DRONE_FLEET`), placing it on the next clear cradle at the
