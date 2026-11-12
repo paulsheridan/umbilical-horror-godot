@@ -16,8 +16,8 @@ extends Node3D
 ## Only the linked bot drains and steers; B deploys, Q / 1-2 move the link; a
 ## lost chassis is struck from the fleet and the link hops to a survivor.
 
-const FAB_BAY := preload("res://src/hub/fab_bay.gd")
-const BEYOND := preload("res://src/ship/beyond.gd")
+const FAB_BAY_SCENE := preload("res://scenes/level/rooms/fab_bay.tscn")
+const SHIP_SCENE := preload("res://scenes/level/ship.tscn")
 const DRONE := preload("res://src/drone/drone.gd")
 const SCANNER := preload("res://src/ui/scanner.gd")
 const HOST := preload("res://src/host/host.gd")
@@ -162,15 +162,13 @@ var _table_t := 0.0
 func _ready() -> void:
 	_build_environment()
 
-	level = FAB_BAY.new()
+	level = FAB_BAY_SCENE.instantiate()
 	add_child(level)
-	level.build()
 	level.pilot_chair.on_interact = Callable(self, "_start_sortie")
 	level.fabricator.on_interact = Callable(self, "_at_fabricator")
 
-	ship = BEYOND.new()
+	ship = SHIP_SCENE.instantiate()
 	add_child(ship)
-	ship.build()
 	_camera_site_pos = ship.CAMERA_POS
 
 	_setup_table_map()

@@ -5,7 +5,7 @@ extends Node3D
 ##
 ## Run: godot --headless --path . res://tests/processor_ai.tscn
 
-const BEYOND := preload("res://src/ship/beyond.gd")
+const SHIP_SCENE := preload("res://scenes/level/ship.tscn")
 const PROCESSOR := preload("res://src/host/processor.gd")
 
 class DummyBot extends CharacterBody3D:
@@ -35,9 +35,8 @@ func _wait(frames: int) -> void:
 
 
 func _run() -> void:
-	ship = BEYOND.new()
+	ship = SHIP_SCENE.instantiate()
 	add_child(ship)
-	ship.build()
 	await _wait(2)
 
 	# --- Layout ------------------------------------------------------------

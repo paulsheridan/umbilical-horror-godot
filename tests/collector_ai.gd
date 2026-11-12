@@ -4,7 +4,7 @@ extends Node3D
 ##
 ## Run: godot --headless --path . res://tests/collector_ai.tscn
 
-const BEYOND := preload("res://src/ship/beyond.gd")
+const SHIP_SCENE := preload("res://scenes/level/ship.tscn")
 const COLLECTOR := preload("res://src/host/collector.gd")
 const STALKER := preload("res://src/host/stalker.gd")
 
@@ -34,9 +34,8 @@ func _wait(frames: int) -> void:
 
 
 func _run() -> void:
-	ship = BEYOND.new()
+	ship = SHIP_SCENE.instantiate()
 	add_child(ship)
-	ship.build()
 	await _wait(2)
 
 	# --- Layout ------------------------------------------------------------
