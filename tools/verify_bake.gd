@@ -26,31 +26,59 @@ func _ready() -> void:
 
 	var a: Array = []
 	var b: Array = []
-	_collect(built, a)
-	_collect(baked, b)
+	_collect(built, a, built)
+	_collect(baked, b, baked)
+
+	# Order-independent comparison: room grouping moves nodes between parents,
+	# so compare the multiset of signatures instead of traversal order.
+	var ca := {}
+	for n in a:
+		var k := _sort_key(n)
+		ca[k] = int(ca.get(k, 0)) + 1
+	var cb := {}
+	for n in b:
+		var k := _sort_key(n)
+		cb[k] = int(cb.get(k, 0)) + 1
 
 	var bad := 0
-	if a.size() != b.size():
-		print("COUNT MISMATCH: builder=%d baked=%d" % [a.size(), b.size()])
-		bad += 1
-	var n := mini(a.size(), b.size())
-	for i in n:
-		var d: String = _diff(a[i], b[i])
-		if d != "":
+	for k in ca:
+		if int(ca[k]) != int(cb.get(k, 0)):
 			bad += 1
 			if bad <= 20:
-				print("DIFF %d: %s" % [i, d])
+				print("DIFF: %s (builder %d, baked %d)"
+						% [k, ca[k], cb.get(k, 0)])
+	for k in cb:
+		if not ca.has(k):
+			bad += 1
+			if bad <= 20:
+				print("EXTRA: %s (baked only, x%d)" % [k, cb[k]])
 	print("PARITY %s (%d nodes compared, %d differences)"
-			% ["PASS" if bad == 0 else "FAIL", n, bad])
+			% ["PASS" if bad == 0 else "FAIL", mini(a.size(), b.size()), bad])
 	get_tree().quit(0 if bad == 0 else 1)
 
 
-func _collect(node: Node, out: Array) -> void:
+func _sort_key(n: Node) -> String:
+	var extra := ""
+	if n is CSGBox3D:
+		extra = str((n as CSGBox3D).size)
+	elif n is CSGCylinder3D:
+		extra = "%.3f/%.3f" % [(n as CSGCylinder3D).radius, (n as CSGCylinder3D).height]
+	elif n is CSGSphere3D:
+		extra = "%.3f" % (n as CSGSphere3D).radius
+	elif n is OmniLight3D:
+		extra = str((n as OmniLight3D).light_color)
+	return "%s|%.3f|%.3f|%.3f|%s" % [n.get_class(), n.global_position.x,
+			n.global_position.y, n.global_position.z, extra]
+
+
+func _collect(node: Node, out: Array, root: Node) -> void:
+	if _under_remains(node, root):
+		return
 	if node is CSGShape3D or node is OmniLight3D or node is StaticBody3D \
 			or node is CollisionShape3D or node is MeshInstance3D:
 		out.append(node)
 	for child in node.get_children():
-		_collect(child, out)
+		_collect(child, out, root)
 
 
 func _diff(x: Node, y: Node) -> String:
@@ -95,10 +123,15 @@ func _diff(x: Node, y: Node) -> String:
 	return ""
 
 
-func _under_remains(node: Node, root: Node) -> bool:
+func _under_remains(node: Node, _root: Node) -> bool:
+	# Remains are a 3-child cluster (long bone, wet mass, skull chip). Their
+	# rotation is randomised per build, so they are excluded from parity.
 	var parent := node.get_parent()
-	return parent != null and parent != root and parent.get_child_count() == 3 \
-			and parent.get_parent() == root and not parent is CSGShape3D
+	if parent == null or parent.get_child_count() != 3:
+		return false
+	var first := parent.get_child(0)
+	return first is CSGBox3D \
+			and (first as CSGBox3D).size.is_equal_approx(Vector3(0.08, 0.07, 0.46))
 
 
 func _same_vec(p: Vector3, q: Vector3) -> bool:

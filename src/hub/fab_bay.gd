@@ -33,6 +33,9 @@ func _ready() -> void:
 	map_surface = get_node_or_null("MapSurface")
 	_flicker = get_node_or_null("MapFlicker") as OmniLight3D
 	_emergency = get_node_or_null("EmergencyLight") as OmniLight3D
+	var start := get_node_or_null("PlayerStart") as Node3D
+	if start != null:
+		player_start = start.position
 
 
 func _process(delta: float) -> void:

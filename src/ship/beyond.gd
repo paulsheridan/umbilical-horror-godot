@@ -47,12 +47,12 @@ var dock_pos := Vector3(-2.0, 0.32, -5.9)
 const DOOR_CLOSED_Z := -29.2
 const DOOR_OPEN_Z := -27.3
 const DOOR_SPEED := 0.8    # m/s — the grind lasts ~2 s, loud the whole way
-const GALLEY_DOOR_POS := Vector3(-8.65, 1.0, -29.2)
-const FOOD_POS := Vector3(-18.5, 0.35, -32.7)
+var GALLEY_DOOR_POS := Vector3(-8.65, 1.0, -29.2)
+var FOOD_POS := Vector3(-18.5, 0.35, -32.7)
 # The video-camera module lies on the *near* (west) lip of the wreck, not
 # behind it: the spur is only 1.6 m wide and the wreck blocks the far half, so
 # a rear-mounted module is outside the drone's reachable pickup envelope.
-const CAMERA_POS := Vector3(6.45, 0.45, -29.75)  # video module on the wreck
+var CAMERA_POS := Vector3(6.45, 0.45, -29.75)  # video module on the wreck
 
 # --- East annex (M6): donut + cafeteria -----------------------------------
 const RING_X0 := 4.6          # junction east wall / west ring outer face
@@ -88,7 +88,7 @@ const CRAWL_X0 := 12.4
 const CRAWL_X1 := 14.0
 # The one movable deposit point for the Collector's old nest. Change this
 # vector (and the matching nest geometry in _ossuary) to move the hoard.
-const COLLECTOR_DEPOSIT := Vector3(19.8, 0.0, -7.2)
+var COLLECTOR_DEPOSIT := Vector3(19.8, 0.0, -7.2)
 
 # --- Processor wing (M6c) --------------------------------------------------
 # A long dark hall east of the berth hall, ending in the feed chamber.
@@ -102,11 +102,11 @@ const PROC_ROOM_Z0 := -15.4
 const PROC_ROOM_Z1 := -8.0
 # The Processor is pinned against the chamber's east wall. The pile the
 # Collector now feeds sits between it and the hall mouth.
-const PROCESSOR_POS := Vector3(32.1, 0.0, -11.7)
-const PROCESSOR_PILE := Vector3(29.8, 0.0, -11.7)
+var PROCESSOR_POS := Vector3(32.1, 0.0, -11.7)
+var PROCESSOR_PILE := Vector3(29.8, 0.0, -11.7)
 # Where the Collector sets a carried bot down: at the pile, on the hall side,
 # so the player has room to drive clear when the Processor reaches.
-const PROCESSOR_DROP := Vector3(28.9, 0.32, -11.7)
+var PROCESSOR_DROP := Vector3(28.9, 0.32, -11.7)
 
 var galley_door: CSGBox3D = null
 var galley_door_open := false
@@ -139,16 +139,30 @@ func open_galley_door() -> void:
 ## The scene is the source of truth for geometry. Resolve the named anchors and
 ## rebuild the gameplay lists from the metadata baked onto their nodes.
 func _ready() -> void:
-	galley_door = get_node_or_null("GalleyDoor")
-	camera_module = get_node_or_null("CameraModule")
-	collector_pile = get_node_or_null("CollectorPile")
-	processor_pile = get_node_or_null("ProcessorPile")
+	# Placement is editor-owned: markers override the fallbacks below.
+	dock_pos = _anchor("Dock", dock_pos)
+	CAMERA_POS = _anchor("CameraSite", CAMERA_POS)
+	FOOD_POS = _anchor("Food", FOOD_POS)
+	GALLEY_DOOR_POS = _anchor("GalleyDoorApproach", GALLEY_DOOR_POS)
+	COLLECTOR_DEPOSIT = _anchor("CollectorDeposit", COLLECTOR_DEPOSIT)
+	PROCESSOR_POS = _anchor("ProcessorPos", PROCESSOR_POS)
+	PROCESSOR_PILE = _anchor("ProcessorPile", PROCESSOR_PILE)
+	PROCESSOR_DROP = _anchor("ProcessorDrop", PROCESSOR_DROP)
+	galley_door = find_child("GalleyDoor", true, false)
+	camera_module = find_child("CameraModule", true, false)
+	collector_pile = find_child("CollectorPile", true, false)
+	processor_pile = find_child("ProcessorPile", true, false)
 	hide_spots.clear()
 	ambush_spots.clear()
 	chokes.clear()
 	loud_doors.clear()
 	remains.clear()
 	_scan_data(self)
+
+
+func _anchor(anchor_name: String, fallback: Vector3) -> Vector3:
+	var node := get_node_or_null("Data/%s" % anchor_name) as Node3D
+	return node.position if node != null else fallback
 
 
 func _scan_data(node: Node) -> void:
@@ -187,7 +201,7 @@ func _scan_data(node: Node) -> void:
 
 
 func _process(delta: float) -> void:
-	var lamp := get_node_or_null("FlickerLight") as OmniLight3D
+	var lamp := find_child("FlickerLight", true, false) as OmniLight3D
 	if lamp != null:
 		var t: float = Time.get_ticks_msec() / 1000.0
 		lamp.light_energy = 0.55 * (0.7 + 0.3 * sin(t * 11.0)) \

@@ -35,6 +35,11 @@ func _bake_fab() -> void:
 	root._flicker.name = "MapFlicker"
 	root._emergency.name = "EmergencyLight"
 
+	var start := Marker3D.new()
+	start.name = "PlayerStart"
+	start.position = root.player_start
+	root.add_child(start)
+
 	# The scene root must point at the runtime controller, not the migration
 	# builder, or every load would try to rebuild the room.
 	root.set_script(load("res://src/hub/fab_bay.gd"))
@@ -93,6 +98,16 @@ func _bake_ship() -> void:
 	data.name = "Data"
 	root.add_child(data)
 
+	# Placement anchors. Gameplay reads these instead of mirroring constants.
+	_anchor(data, "Dock", root.dock_pos)
+	_anchor(data, "CameraSite", root.CAMERA_POS)
+	_anchor(data, "Food", root.FOOD_POS)
+	_anchor(data, "GalleyDoorApproach", root.GALLEY_DOOR_POS)
+	_anchor(data, "CollectorDeposit", root.COLLECTOR_DEPOSIT)
+	_anchor(data, "ProcessorPos", root.PROCESSOR_POS)
+	_anchor(data, "ProcessorPile", root.PROCESSOR_PILE)
+	_anchor(data, "ProcessorDrop", root.PROCESSOR_DROP)
+
 	for i in root.hide_spots.size():
 		var spot: Dictionary = root.hide_spots[i]
 		var m := Marker3D.new()
@@ -123,12 +138,66 @@ func _bake_ship() -> void:
 		m.add_to_group("choke")
 		data.add_child(m)
 
+	# Group geometry into room containers so the scene tree is navigable in
+	# the editor. Containers stay at the origin, so no transform changes.
+	_organize(root, data)
+
 	# Swap the migration builder for the runtime controller before packing.
 	root.set_script(load("res://src/ship/beyond.gd"))
 
 	_own(root, root)
 	_save(root, SHIP_PATH)
 	root.queue_free()
+
+
+const ROOMS := [
+	"Corridor", "Junction", "Spur", "Galley", "Annex", "BerthWing",
+	"ProcessorWing", "World",
+]
+
+
+func _organize(root: Node3D, data: Node3D) -> void:
+	var containers := {}
+	for room in ROOMS:
+		var c := Node3D.new()
+		c.name = room
+		root.add_child(c)
+		containers[room] = c
+	var movable: Array = []
+	for child in root.get_children():
+		if child == data or child in containers.values():
+			continue
+		if child is Node3D:
+			movable.append(child)
+	for child in movable:
+		# The single flat floor collider spans the whole ship.
+		var room := "World" if child is StaticBody3D else _room_for(child.position)
+		child.reparent(containers[room], true)
+
+
+func _room_for(p: Vector3) -> String:
+	if p.x >= 21.0 and p.z < -8.0:
+		return "ProcessorWing"
+	if p.x >= 7.0 and p.z > -16.0 and p.z < -6.0:
+		return "BerthWing"
+	if p.x >= 4.6 and p.x <= 9.0 and p.z <= -28.4:
+		return "Spur"
+	if p.x >= 4.6 and p.z <= -16.0 and p.z >= -31.4:
+		return "Annex"
+	if p.x <= -4.6 and p.z <= -24.0:
+		return "Galley"
+	if p.z <= -25.6 and p.x > -4.6:
+		return "Junction"
+	if p.x > -3.4 and p.z <= -5.4:
+		return "Corridor"
+	return "World"
+
+
+func _anchor(data: Node3D, anchor_name: String, pos: Vector3) -> void:
+	var marker := Marker3D.new()
+	marker.name = anchor_name
+	marker.position = pos
+	data.add_child(marker)
 
 
 func _own(node: Node, root: Node) -> void:
