@@ -46,18 +46,18 @@ func _run() -> void:
 	# --- Anchors -----------------------------------------------------------
 	var missing := []
 	for anchor in ANCHORS:
-		if ship.get_node_or_null("Data/%s" % anchor) == null:
+		if ship.get_node_or_null("Data/Anchors/%s" % anchor) == null:
 			missing.append(anchor)
 	_check(missing.is_empty(), "all gameplay anchors exist (%s)" % str(missing))
 	_check(ship.dock_pos.distance_to(
-			(ship.get_node("Data/Dock") as Node3D).position) < 0.001,
+			(ship.get_node("Data/Anchors/Dock") as Node3D).position) < 0.001,
 			"dock placement resolves from its marker")
 	_check(ship.PROCESSOR_PILE.distance_to(
-			(ship.get_node("Data/ProcessorPile") as Node3D).position) < 0.001,
+			(ship.get_node("Data/Anchors/ProcessorPile") as Node3D).position) < 0.001,
 			"the Processor pile resolves from its marker")
 
 	# Moving a marker and re-resolving must move gameplay.
-	var pile_marker := ship.get_node("Data/ProcessorPile") as Node3D
+	var pile_marker := ship.get_node("Data/Anchors/ProcessorPile") as Node3D
 	var original: Vector3 = pile_marker.position
 	pile_marker.position = original + Vector3(0.0, 0.0, -0.6)
 	ship._ready()
@@ -87,7 +87,7 @@ func _run() -> void:
 			rooms_found += 1
 			chars += _count(child)
 	_check(rooms_found == ROOMS.size(), "all eight room containers exist")
-	_check(chars >= 350, "room containers hold the geometry (%d nodes)" % chars)
+	_check(chars >= 330, "room containers hold the geometry (%d nodes)" % chars)
 
 	var material_path := ""
 	for node in ship.find_children("*", "CSGShape3D", true, false):

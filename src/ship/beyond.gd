@@ -148,10 +148,10 @@ func _ready() -> void:
 	PROCESSOR_POS = _anchor("ProcessorPos", PROCESSOR_POS)
 	PROCESSOR_PILE = _anchor("ProcessorPile", PROCESSOR_PILE)
 	PROCESSOR_DROP = _anchor("ProcessorDrop", PROCESSOR_DROP)
-	galley_door = find_child("GalleyDoor", true, false)
-	camera_module = find_child("CameraModule", true, false)
-	collector_pile = find_child("CollectorPile", true, false)
-	processor_pile = find_child("ProcessorPile", true, false)
+	galley_door = _resolve("GalleyDoor") as CSGBox3D
+	camera_module = _resolve("CameraModule")
+	collector_pile = _resolve("CollectorPile") as Node3D
+	processor_pile = _resolve("ProcessorPile") as Node3D
 	hide_spots.clear()
 	ambush_spots.clear()
 	chokes.clear()
@@ -160,8 +160,18 @@ func _ready() -> void:
 	_scan_data(self)
 
 
+## Resolve a named gameplay node while ignoring Marker3D anchors, which may
+## share a name (the ProcessorPile anchor and the pile node are siblings in
+## different containers).
+func _resolve(node_name: String) -> Node:
+	for node in find_children(node_name, "", true, false):
+		if not node is Marker3D:
+			return node
+	return null
+
+
 func _anchor(anchor_name: String, fallback: Vector3) -> Vector3:
-	var node := get_node_or_null("Data/%s" % anchor_name) as Node3D
+	var node := get_node_or_null("Data/Anchors/%s" % anchor_name) as Node3D
 	return node.position if node != null else fallback
 
 
@@ -201,7 +211,7 @@ func _scan_data(node: Node) -> void:
 
 
 func _process(delta: float) -> void:
-	var lamp := find_child("FlickerLight", true, false) as OmniLight3D
+	var lamp := _resolve("FlickerLight") as OmniLight3D
 	if lamp != null:
 		var t: float = Time.get_ticks_msec() / 1000.0
 		lamp.light_energy = 0.55 * (0.7 + 0.3 * sin(t * 11.0)) \

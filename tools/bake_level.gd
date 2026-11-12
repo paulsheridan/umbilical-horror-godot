@@ -98,15 +98,19 @@ func _bake_ship() -> void:
 	data.name = "Data"
 	root.add_child(data)
 
-	# Placement anchors. Gameplay reads these instead of mirroring constants.
-	_anchor(data, "Dock", root.dock_pos)
-	_anchor(data, "CameraSite", root.CAMERA_POS)
-	_anchor(data, "Food", root.FOOD_POS)
-	_anchor(data, "GalleyDoorApproach", root.GALLEY_DOOR_POS)
-	_anchor(data, "CollectorDeposit", root.COLLECTOR_DEPOSIT)
-	_anchor(data, "ProcessorPos", root.PROCESSOR_POS)
-	_anchor(data, "ProcessorPile", root.PROCESSOR_PILE)
-	_anchor(data, "ProcessorDrop", root.PROCESSOR_DROP)
+	# Placement anchors live under their own container so their names cannot
+	# collide with gameplay nodes (e.g. ProcessorPile).
+	var anchors := Node3D.new()
+	anchors.name = "Anchors"
+	data.add_child(anchors)
+	_anchor(anchors, "Dock", root.dock_pos)
+	_anchor(anchors, "CameraSite", root.CAMERA_POS)
+	_anchor(anchors, "Food", root.FOOD_POS)
+	_anchor(anchors, "GalleyDoorApproach", root.GALLEY_DOOR_POS)
+	_anchor(anchors, "CollectorDeposit", root.COLLECTOR_DEPOSIT)
+	_anchor(anchors, "ProcessorPos", root.PROCESSOR_POS)
+	_anchor(anchors, "ProcessorPile", root.PROCESSOR_PILE)
+	_anchor(anchors, "ProcessorDrop", root.PROCESSOR_DROP)
 
 	for i in root.hide_spots.size():
 		var spot: Dictionary = root.hide_spots[i]
@@ -193,11 +197,11 @@ func _room_for(p: Vector3) -> String:
 	return "World"
 
 
-func _anchor(data: Node3D, anchor_name: String, pos: Vector3) -> void:
+func _anchor(parent: Node3D, anchor_name: String, pos: Vector3) -> void:
 	var marker := Marker3D.new()
 	marker.name = anchor_name
 	marker.position = pos
-	data.add_child(marker)
+	parent.add_child(marker)
 
 
 func _own(node: Node, root: Node) -> void:

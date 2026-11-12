@@ -7,7 +7,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 godot="${GODOT:-godot}"
 suites=("$@")
 if [ ${#suites[@]} -eq 0 ]; then
-	suites=(autotest camera_loop patrol_soak host_ai_rules stalker_ai annex_loop collector_ai processor_ai)
+	suites=(autotest camera_loop patrol_soak host_ai_rules stalker_ai annex_loop collector_ai processor_ai level_scene)
 fi
 
 total=0
