@@ -132,5 +132,52 @@ func _run() -> void:
 	_check(_caught, "contact inside catch range still kills")
 	_check(host.state == host.State.STALK, "catch leaves the host on the body")
 
+	# --- The flashlight is a beacon: it suspends stillness and extends sight -
+	host.reset()
+	host.rotation.y = 0.0
+	host.global_position = Vector3(0, 0.2, 0)
+	host.waypoints = []
+	drone.set_flashlight(true)
+	drone.set_flashlight_enabled(false)
+	drone.velocity = Vector3.ZERO
+	drone.global_position = Vector3(0, 0.32, -11.0)
+	await _wait(30)
+	_check(host.state == host.State.PATROL,
+			"an unlit still drone 11 m away stays unseen")
+	drone.set_flashlight_enabled(true)
+	await _wait(12)
+	_check(host.state == host.State.STALK,
+			"the lit drone is spotted while still, beyond the old sight range")
+
+	# --- The beam ignores the old cone too: a lit chassis at 90° and well
+	# beyond normal range is still a beacon with a clear line of sight.
+	host.reset()
+	host.rotation.y = 0.0
+	host.global_position = Vector3(0, 0.2, 0)
+	host.waypoints = []
+	drone.velocity = Vector3.ZERO
+	drone.global_position = Vector3(13, 0.32, 0)
+	await _wait(30)
+	_check(host.state == host.State.STALK,
+			"a lit still drone out of the frontal cone and old range is spotted")
+
+	# Pursuit plays the run clip: it is moving toward the drone, not pacing.
+	await _wait(10)
+	_check(host._anim != null and host._anim_name == "run",
+			"a stalking host moving on the drone plays the run clip")
+
+	# --- But the beam still needs line of sight: a wall defeats it ----------
+	host.reset()
+	host.rotation.y = 0.0
+	host.global_position = Vector3(0, 0.2, 0)
+	var beam_wall := _box_body(Vector3(0.3, 2.0, 6), Vector3(6.5, 1.0, 0))
+	drone.global_position = Vector3(13, 0.32, 0)
+	drone.velocity = Vector3.ZERO
+	await _wait(30)
+	_check(host.state == host.State.PATROL,
+			"the same lit drone behind a wall is not spotted")
+	beam_wall.queue_free()
+	await _wait(2)
+
 	print("HOST AI RULES", " FAILED" if _failed else " PASS")
 	get_tree().quit(1 if _failed else 0)

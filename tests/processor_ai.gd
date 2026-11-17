@@ -1,7 +1,7 @@
 extends Node3D
-## Focused probe for the Processor: the new east hall/chamber geometry, the
-## pinned body, motion-only sight, the telegraph/reach/catch escape window,
-## feeding from the pile, and release after a fleet loss.
+## Focused probe for the Processor: the pinned body, motion-only sight, the
+## telegraph/reach/catch escape window, feeding from the pile, and release
+## after a fleet loss. Hall geometry is not asserted here.
 ##
 ## Run: godot --headless --path . res://tests/processor_ai.tscn
 
@@ -39,28 +39,10 @@ func _run() -> void:
 	add_child(ship)
 	await _wait(2)
 
-	# --- Layout ------------------------------------------------------------
+	# --- Layout data -------------------------------------------------------
 	_check(ship.processor_pile != null, "the Processor's feeding pile exists")
 	_check(ship.processor_pile.global_position.distance_to(ship.PROCESSOR_PILE) < 0.1,
 			"the pile sits on the authored feed constant")
-	var hall_len: float = ship.PROC_HALL_X1 - ship.PROC_HALL_X0
-	_check(hall_len >= 6.0, "the Processor hall is long (%.1f m)" % hall_len)
-	_check(ship.PROCESSOR_PILE.distance_to(ship.PROCESSOR_POS) < 3.0,
-			"the pile is inside arm's reach of the pinned body")
-	_check(ship.PROCESSOR_DROP.distance_to(ship.PROCESSOR_POS) < 4.0,
-			"the Collector's drop point is at the mouth's edge")
-
-	# The hall is enclosed except at both ends and the chamber mouth. A drone-
-	# height ray straight down the hall reaches the pile without a wall stop.
-	var space := get_world_3d().direct_space_state
-	var down_hall := PhysicsRayQueryParameters3D.create(
-			Vector3(21.6, 0.55, -11.7), Vector3(28.7, 0.55, -11.7), 1)
-	_check(space.intersect_ray(down_hall).is_empty(),
-			"the whole Processor hall is open at drone height")
-	var hall_side := PhysicsRayQueryParameters3D.create(
-			Vector3(24.5, 1.45, -13.6), Vector3(24.5, 1.45, -9.8), 1)
-	_check(not space.intersect_ray(hall_side).is_empty(),
-			"the hall has solid north/south walls")
 
 	# --- Body --------------------------------------------------------------
 	processor = PROCESSOR_SCENE.instantiate()
@@ -87,9 +69,19 @@ func _run() -> void:
 			"the pinned body never walks")
 
 	# --- Motion-only sight -------------------------------------------------
+	# Stage relative to the pinned body so moving its marker moves the probe.
+	var fwd: Vector3 = -processor.global_transform.basis.z
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+	var side: Vector3 = processor.global_transform.basis.x
+	side.y = 0.0
+	side = side.normalized()
+	var front_pos: Vector3 = processor.global_position + fwd * 1.9 \
+			+ Vector3(0.0, 0.2, 0.0)
+
 	var still := DummyBot.new()
 	add_child(still)
-	still.global_position = Vector3(30.2, 0.2, -11.7)
+	still.global_position = front_pos
 	still.velocity = Vector3.ZERO
 	processor.drone = still
 	await _wait(2)
@@ -100,10 +92,11 @@ func _run() -> void:
 	still.velocity = Vector3(0.8, 0.0, 0.0)
 	_check(processor._can_see_drone(),
 			"a moving chassis in the cone is seen")
-	still.global_position = Vector3(32.1, 0.2, -14.6)
+	still.global_position = processor.global_position + side * 2.9 \
+			+ Vector3(0.0, 0.2, 0.0)
 	_check(not processor._can_see_drone(),
 			"motion outside the frontal cone is not seen")
-	still.global_position = Vector3(30.2, 0.2, -11.7)
+	still.global_position = front_pos
 
 	# A carried chassis is cargo, not food.
 	still.carried = true
@@ -117,7 +110,7 @@ func _run() -> void:
 	# --- Telegraph, reach, catch ------------------------------------------
 	var bot := DummyBot.new()
 	add_child(bot)
-	bot.global_position = Vector3(30.2, 0.2, -11.7)
+	bot.global_position = front_pos
 	processor.drone = bot
 	processor.reset()
 	_caught = 0
@@ -142,7 +135,8 @@ func _run() -> void:
 	# --- Escape window -----------------------------------------------------
 	# A confirmed catch is only possible inside MAX_REACH. A bot that drives
 	# past the hand's reach survives the same telegraph.
-	bot.global_position = Vector3(27.4, 0.2, -11.7)
+	bot.global_position = processor.global_position + fwd * 4.7 \
+			+ Vector3(0.0, 0.2, 0.0)
 	processor.drone = bot
 	processor.reset()
 	_caught = 0

@@ -19,31 +19,35 @@ signal lunge_started
 
 enum State { PATROL, INVESTIGATE, SEARCH, CHASE, LURK, LUNGE, AMBUSH_SETUP, AMBUSH }
 
-const W_PATROL := 1.0
-const W_INVESTIGATE := 1.35
-const W_CHASE := 2.05
-const W_CHASE_CLOSE := 2.35
+const W_PATROL := 0.85
+const W_INVESTIGATE := 1.0
+const W_CHASE := 1.35
+const W_CHASE_CLOSE := 1.55
 
 const HEARING_MULT := 26.0
 const SIGHT_RANGE := 16.0
 const SIGHT_FOV := 110.0
+## A lit chassis is a beacon: longer eyes, a wider cone, and even low cover no
+## longer hides it from sight. This is the flashlight's cost.
+const LIGHT_SIGHT_MULT := 1.55
+const LIGHT_FOV_MULT := 1.12
 const EYE_HEIGHT := 1.75
 const CATCH_RANGE := 1.0
 const LOSE_SIGHT_TIME := 1.0
 const SEARCH_LEAD := 4.0
 const SEARCH_TIME := 3.6
-const INVESTIGATE_TIMEOUT := 9.0
+const INVESTIGATE_TIMEOUT := 18.0
 const ARRIVE := 0.6
 
 ## The "don't look back" scare. When the live feed is up and the stalker is
 ## already behind the drone, it may choose to shadow it at LURK_DIST instead
 ## of charging. Turning the camera far enough toward it starts the lunge.
 const LURK_DIST := 3.2
-const W_LURK := 3.0
+const W_LURK := 2.2
 const LURK_CHANCE := 0.25
 const LUNGE_DOT := 0.55       # dot(camera-forward, to-stalker) that reveals it
 const LUNGE_RANGE := 6.0
-const W_LUNGE := 7.0
+const W_LUNGE := 5.2
 
 ## Fold-up ambush: it picks a corner outside the camera, creeps there and
 ## waits with its face at drone height, eyes shut, until you drive past.
@@ -52,7 +56,10 @@ const AMBUSH_ROLL := 6.0
 const AMBUSH_COOLDOWN := 25.0
 const AMBUSH_TRIGGER := 3.2
 const AMBUSH_WAIT := 22.0
-const W_AMBUSH_SETUP := 2.2
+const W_AMBUSH_SETUP := 1.5
+## Hunt / hide cycle. It stalks the drone for a while, folds into a wall spot,
+## then sets out again — never parked in one corner for the whole session.
+const HUNT_DURATION := 16.0
 
 
 var drone = null
@@ -69,8 +76,14 @@ var radar_blips := false
 var radar_mass_scale := 1.0
 ## Set by main while the recovered video module is giving the pilot a live feed.
 var feed_active := false
+## Debug vision: no sight, no noise response, no catch. Main sets this on its
+## developer toggle; the shipped level never spawns this body anyway.
+var ghosted := false
 
 var state: int = State.PATROL
+## Chase reach, 0..1: the arms come out toward the drone only while closing on
+## it. Read by the focused reach probe; the weight keeps the blend smooth.
+var arm_reach := 0.0
 
 var _wp := 0
 var _rest := 0.0
@@ -94,6 +107,19 @@ var _ambush_roll_t := 8.0
 var _ambush_cd := 0.0
 var _ambush_t := 0.0
 var _ambush_spring := false
+
+## Per-instance ambush tuning. The engine-room Stalker overrides these through
+## main so it waits in the machinery instead of roaming the whole floor.
+var ambush_chance := AMBUSH_CHANCE
+var ambush_roll := AMBUSH_ROLL
+var ambush_cooldown := AMBUSH_COOLDOWN
+var ambush_wait := AMBUSH_WAIT
+var ambush_trigger := AMBUSH_TRIGGER
+var hunt_duration := HUNT_DURATION
+var _hunt_t := 0.0
+## Slow, deliberate patrol; the engine Stalker is tuned down so it prefers the
+## lair over covering ground.
+var patrol_speed := W_PATROL
 ## Active way-around route through a choke (see _nav_target).
 var _detour: Array = []
 
@@ -164,11 +190,12 @@ func reset() -> void:
 	_stuck_run = 0
 	_stuck_last = global_position
 	_gait = 0.0
-	_ambush_roll_t = 8.0
+	_ambush_roll_t = ambush_roll
 	_ambush_cd = 0.0
 	_ambush_t = 0.0
 	_ambush_spring = false
 	radar_mass_scale = 1.0
+	arm_reach = 0.0
 
 
 ## Scripted/test entry point: force the chase even if the cone check is noisy.
@@ -183,7 +210,7 @@ func _physics_process(delta: float) -> void:
 	if state == State.PATROL:
 		_ambush_roll_t -= delta
 		if _ambush_roll_t <= 0.0:
-			_ambush_roll_t = AMBUSH_ROLL
+			_ambush_roll_t = ambush_roll
 			if _ambush_cd <= 0.0:
 				_try_start_ambush()
 	if _caught:
@@ -217,11 +244,19 @@ func _physics_process(delta: float) -> void:
 # --------------------------------------------------------------------------
 
 func _sense(delta: float) -> void:
+	if ghosted:
+		_sees = false
+		_caught = false
+		if state != State.PATROL:
+			_give_up()
+		return
 	if drone == null or not is_instance_valid(drone):
 		_sees = false
 		_caught = false
+		# An already-folded ambusher keeps waiting when there is no link:
+		# the player standing up does not make it abandon its lair.
 		if state == State.CHASE or state == State.LURK or state == State.LUNGE \
-				or state == State.AMBUSH_SETUP or state == State.AMBUSH:
+				or state == State.AMBUSH_SETUP:
 			_give_up()
 		return
 
@@ -304,7 +339,7 @@ func _drone_near_ambush() -> bool:
 	var flat: Vector3 = global_position - drone.global_position
 	flat.y = 0.0
 	var d := flat.length()
-	if d > AMBUSH_TRIGGER:
+	if d > ambush_trigger:
 		return false
 	if d < 0.1:
 		return true
@@ -315,9 +350,10 @@ func _drone_near_ambush() -> bool:
 	return fwd.dot(flat.normalized()) > -0.25
 
 
-## Called while patrolling: pick a corner outside the drone's current view,
-## near enough to be a real trap, and fold up there.
-func _try_start_ambush() -> bool:
+## Pick a corner near a wall, outside the drone's view when possible. A forced
+## pick (end of a hunt) relaxes the trap rules but always picks a *different*
+## corner from the last one, so it never camps a single spot all session.
+func _try_start_ambush(force := false) -> bool:
 	if drone == null or not is_instance_valid(drone) or ambush_spots.is_empty():
 		return false
 	var fwd: Vector3 = -drone.global_transform.basis.z
@@ -326,46 +362,64 @@ func _try_start_ambush() -> bool:
 	var best := Vector3.ZERO
 	var best_d := INF
 	for p in ambush_spots:
+		if force and _ambush_target != Vector3.ZERO \
+				and p.distance_to(_ambush_target) < 5.0:
+			continue
 		var to: Vector3 = p - drone.global_position
 		to.y = 0.0
 		var d := to.length()
-		if d < 4.0 or d > 14.0:
+		if not force and (d < 4.0 or d > 14.0):
 			continue
-		if fwd.dot(to.normalized()) > 0.15:
+		if not force and fwd.dot(to.normalized()) > 0.15:
 			continue   # the drone is looking at it; not a trap spot
-		if p.distance_to(global_position) > 22.0:
+		if p.distance_to(global_position) > 26.0:
 			continue
 		if d < best_d:
 			best_d = d
 			best = p
 	if best_d == INF:
+		# Fall back to the farthest wall spot from the last hide.
+		for p in ambush_spots:
+			if _ambush_target != Vector3.ZERO \
+					and p.distance_to(_ambush_target) < 5.0:
+				continue
+			var d: float = global_position.distance_to(p)
+			if d < best_d:
+				best_d = d
+				best = p
+	if best_d == INF:
 		return false
-	if _rng.randf() > AMBUSH_CHANCE:
+	if not force and _rng.randf() > ambush_chance:
 		return false
 	_ambush_target = best
 	_ambush_t = 0.0
-	_ambush_cd = AMBUSH_COOLDOWN
+	_ambush_cd = ambush_cooldown
 	state = State.AMBUSH_SETUP
 	_halt()
 	return true
 
 
 func _can_see_drone() -> bool:
+	if ghosted:
+		return false
 	if drone == null or not is_instance_valid(drone):
 		return false
-	if _drone_hidden():
+	var lit := _drone_lit()
+	if _drone_hidden() and not lit:
 		return false
 	var to: Vector3 = drone.global_position - global_position
 	to.y = 0.0
 	var d := to.length()
-	if d > SIGHT_RANGE:
+	var max_range: float = SIGHT_RANGE * (LIGHT_SIGHT_MULT if lit else 1.0)
+	if d > max_range:
 		return false
 	if d < 0.05:
 		return true
 	var fwd := -global_transform.basis.z
 	fwd.y = 0.0
 	fwd = fwd.normalized()
-	if fwd.dot(to.normalized()) < cos(deg_to_rad(SIGHT_FOV * 0.5)):
+	var cone: float = SIGHT_FOV * (LIGHT_FOV_MULT if lit else 1.0)
+	if fwd.dot(to.normalized()) < cos(deg_to_rad(cone * 0.5)):
 		return false
 	var space := get_world_3d().direct_space_state
 	var q := PhysicsRayQueryParameters3D.create(
@@ -373,6 +427,14 @@ func _can_see_drone() -> bool:
 			drone.global_position + Vector3(0, 0.45, 0))
 	q.collision_mask = 1
 	return space.intersect_ray(q).is_empty()
+
+
+## True while the chassis has its fitted flashlight switched on. Low cover
+## hides a dark machine; it does not hide a lit beam.
+func _drone_lit() -> bool:
+	if drone == null or not is_instance_valid(drone):
+		return false
+	return bool(drone.flashlight_installed) and bool(drone.flashlight_on)
 
 
 ## Low tables are true cover: while the drone is under one it is not visible
@@ -390,6 +452,8 @@ func _drone_hidden() -> bool:
 
 
 func _on_noise(position: Vector3, loudness: float, source: Node = null) -> void:
+	if ghosted:
+		return
 	# Hosts are deaf to each other; source-tagged noise never piles up.
 	if source != null:
 		if not is_instance_valid(source):
@@ -448,7 +512,7 @@ func _do_patrol(delta: float) -> void:
 		_halt()
 		return
 	var target: Vector3 = waypoints[_wp]
-	_seek(target, W_PATROL)
+	_seek(target, patrol_speed)
 	if _flat_dist(target) < ARRIVE:
 		_wp = (_wp + 1) % waypoints.size()
 		_rest = _rng.randf_range(0.7, 1.8)
@@ -472,9 +536,13 @@ func _do_search(delta: float) -> void:
 		_enter_patrol()
 
 
-func _do_chase(_delta: float) -> void:
+func _do_chase(delta: float) -> void:
 	if drone == null or not is_instance_valid(drone):
 		_give_up()
+		return
+	_hunt_t += delta
+	if _hunt_t >= hunt_duration and _sees:
+		_begin_hide()
 		return
 	var to: Vector3 = drone.global_position - global_position
 	to.y = 0.0
@@ -484,10 +552,27 @@ func _do_chase(_delta: float) -> void:
 		return
 	if _sees:
 		var spd := W_CHASE_CLOSE if d > 8.0 else W_CHASE
-		_seek(_nav_target(drone.global_position), spd)
+		_seek(_nav_target(_hunt_target(drone.global_position)), spd)
 	else:
 		# The grace second: keep moving to the last place it saw motion.
 		_seek(_nav_target(_last_seen_pos), W_INVESTIGATE)
+
+
+## While hunting it prefers the wall line: route through a nearby corner spot
+## rather than cutting across the open middle of the room.
+func _hunt_target(goal: Vector3) -> Vector3:
+	if ambush_spots.is_empty():
+		return goal
+	var best: Vector3 = goal
+	var best_d := INF
+	for p in ambush_spots:
+		var to_p: float = global_position.distance_to(p)
+		if to_p < best_d:
+			best_d = to_p
+			best = p
+	if best_d < 12.0 and best_d < global_position.distance_to(goal):
+		return best
+	return goal
 
 
 ## Shadow the drone from behind, out of the forward camera. Turning the
@@ -537,8 +622,23 @@ func _do_ambush_setup(delta: float) -> void:
 func _do_ambush(delta: float) -> void:
 	_ambush_t += delta
 	_halt()
-	if _ambush_t > AMBUSH_WAIT:
-		_enter_patrol()
+	if _ambush_t > ambush_wait:
+		# With no bound drone it is still waiting in the lair; only break cover
+		# when there is something to hunt. This keeps the boot-time ambush read.
+		if drone != null and is_instance_valid(drone) \
+				and global_position.distance_to(drone.global_position) < 28.0:
+			_hunt_t = 0.0
+			_last_seen_pos = drone.global_position
+			_enter_chase()
+		else:
+			_ambush_t = ambush_wait * 0.5
+
+
+## Break off a hunt and fold into a wall spot that is not the previous one.
+func _begin_hide() -> void:
+	if _try_start_ambush(true):
+		return
+	_enter_patrol()
 
 
 # --------------------------------------------------------------------------
@@ -577,6 +677,7 @@ func _enter_search() -> void:
 func _enter_chase() -> void:
 	state = State.CHASE
 	_lost_sight_t = 0.0
+	_hunt_t = 0.0
 
 
 func _enter_lurk() -> void:
@@ -600,11 +701,23 @@ func _enter_ambush() -> void:
 	_ambush_t = 0.0
 	radar_mass_scale = 0.30
 	_halt()
+	if _ambush_target == Vector3.ZERO and not ambush_spots.is_empty():
+		# The boot-time lair spot is the one nearest the authored spawn.
+		var best: Vector3 = ambush_spots[0]
+		var best_d := INF
+		for p in ambush_spots:
+			var d: float = global_position.distance_to(p)
+			if d < best_d:
+				best_d = d
+				best = p
+		_ambush_target = best
 	if drone != null and is_instance_valid(drone):
 		rotation.y = _yaw_to(drone.global_position)
 
 
 func _catch() -> void:
+	if ghosted:
+		return
 	if _caught:
 		return
 	_caught = true
@@ -762,6 +875,11 @@ func _face(delta: float) -> void:
 # --------------------------------------------------------------------------
 
 func _animate(delta: float) -> void:
+	var speed := Vector2(velocity.x, velocity.z).length()
+	# The chase reach is a weight, not a clip: it ramps only while the body is
+	# actually running the drone down, and fades back into the walk swing.
+	var chasing := state == State.CHASE and speed > 0.12
+	arm_reach = move_toward(arm_reach, 1.0 if chasing else 0.0, delta / 0.2)
 	if state == State.AMBUSH:
 		_animate_ambush(delta)
 		_update_presence()
@@ -777,7 +895,6 @@ func _animate(delta: float) -> void:
 		_elbow_r.rotation.x = lerpf(_elbow_r.rotation.x, -0.40, k)
 		_update_presence()
 		return
-	var speed := Vector2(velocity.x, velocity.z).length()
 	var moving := speed > 0.12
 	_gait += delta * (1.6 + speed * 2.2)
 	var amp := 0.16 + minf(speed / W_CHASE, 1.0) * 0.42
@@ -802,6 +919,16 @@ func _animate(delta: float) -> void:
 		_elbow_l.rotation.x = lerpf(_elbow_l.rotation.x, -0.18, minf(delta * 3.0, 1.0))
 		_elbow_r.rotation.x = lerpf(_elbow_r.rotation.x, -0.18, minf(delta * 3.0, 1.0))
 		_hips.position.y = lerpf(_hips.position.y, 1.05, minf(delta * 4.0, 1.0))
+
+	# Chase: both hands held out at the drone while the legs keep running. The
+	# gait tremble keeps the pose from reading as pinned, and the weight hands
+	# the arms straight back to the walk/idle swing when the chase ends.
+	if arm_reach > 0.001:
+		var reach := -1.0 + sin(_gait * 1.6) * 0.10
+		_arm_l.rotation.x = lerpf(_arm_l.rotation.x, reach, arm_reach)
+		_arm_r.rotation.x = lerpf(_arm_r.rotation.x, reach, arm_reach)
+		_elbow_l.rotation.x = lerpf(_elbow_l.rotation.x, -0.50, arm_reach)
+		_elbow_r.rotation.x = lerpf(_elbow_r.rotation.x, -0.50, arm_reach)
 
 	if state == State.LURK or state == State.LUNGE:
 		var reach := -1.05 + sin(_gait) * 0.12

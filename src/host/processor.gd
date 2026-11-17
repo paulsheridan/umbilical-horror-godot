@@ -48,6 +48,12 @@ var state: int = State.IDLE
 var consumed := 0
 var catches := 0
 var pinned := true
+## After the Collector gives itself to the maw, the Processor goes inert: no
+## reach, no feeding, no new catches. The wing becomes a dead room with a
+## lantern and a sack on the deck.
+var dormant := false
+## Debug vision: no sight, no reach, no catch. Main sets this on its toggle.
+var ghosted := false
 
 var _state_t := 0.0
 var _catch_cd := 0.0
@@ -110,7 +116,36 @@ func reset() -> void:
 		_jaw.rotation.x = -0.06
 
 
+func set_dormant(on: bool) -> void:
+	dormant = on
+	if not dormant:
+		return
+	_devour_bot = null
+	_feed_part = null
+	_feed_state = 0
+	_feed_t = 0.0
+	_chew = 0.0
+	state = State.IDLE
+	_state_t = 0.0
+	_hand_target = [REST_L, REST_R]
+	_reach_target = REST_R
+	_caught = false
+
+
 func _physics_process(delta: float) -> void:
+	if dormant:
+		_aim_hands(delta)
+		_animate(delta)
+		return
+	if ghosted:
+		# Debug vision: drop any queued meal and go still. The body animates,
+		# but it never sees or reaches for the fleet.
+		_devour_bot = null
+		_feed_part = null
+		_caught = false
+		_aim_hands(delta)
+		_animate(delta)
+		return
 	_catch_cd = maxf(_catch_cd - delta, 0.0)
 	_state_t += delta
 
@@ -361,6 +396,15 @@ func _next_pile_part() -> Node3D:
 # --------------------------------------------------------------------------
 
 func _animate(delta: float) -> void:
+	if dormant:
+		if _jaw != null:
+			_jaw.rotation.x = lerpf(_jaw.rotation.x, -0.02, minf(delta * 2.0, 1.0))
+		if _mouth_glow != null:
+			_mouth_glow.light_energy = lerpf(_mouth_glow.light_energy, 0.02,
+					minf(delta * 2.0, 1.0))
+		if _rig != null:
+			_rig.rotation.z = lerpf(_rig.rotation.z, 0.0, minf(delta * 2.0, 1.0))
+		return
 	var open := 0.06
 	match state:
 		State.TELEGRAPH:

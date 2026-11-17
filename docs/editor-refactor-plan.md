@@ -78,7 +78,7 @@ hosts/collector/processor/drones = CharacterBody3D.new() + set_script(...)
 - Gameplay data lives in plain arrays/consts on the builder:
   `hide_spots`, `ambush_spots`, `chokes`, `loud_doors`, `remains`,
   `collector_pile`, `processor_pile`, `dock_pos`, `PROCESSOR_*`, `CAMERA_POS`,
-  `GALLEY_DOOR_POS`, `FOOD_POS`.
+  `GALLEY_DOOR_POS`, `FLASHLIGHT_POS`.
 - `main.gd` wires interactables with `Callable(self, "_start_sortie")` etc.
 - Two suites build the ship directly (`collector_ai`, `processor_ai`:
   `BEYOND.new(); ship.build()`); the rest use `main.tscn`.
@@ -222,7 +222,7 @@ Replace every gameplay constant/array with editor-owned data:
 | `ship.dock_pos` | `Anchors/Dock` Marker3D; `ship_refs.dock_pos` |
 | `FabBay.player_start` | `Anchors/PlayerStart` |
 | `CAMERA_POS` | `Anchors/CameraSite` |
-| `GALLEY_DOOR_POS`, `FOOD_POS` | `Anchors/GalleyDoor`, `Anchors/Food` |
+| `GALLEY_DOOR_POS`, `FLASHLIGHT_POS` | `Anchors/GalleyDoor`, `Anchors/Flashlight` |
 | `PROCESSOR_POS / _PILE / _DROP` | `Anchors/Processor*` |
 | `COLLECTOR_DEPOSIT` | `Anchors/CollectorDeposit` |
 | `hide_spots` | group `hide_spot`, `hide_spot.gd` with `@export half: Vector3` |

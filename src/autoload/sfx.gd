@@ -77,9 +77,19 @@ func play(sound: String, at: Vector3 = CENTER, volume_db: float = 0.0, pitch: fl
 		# listener (the player's own ears or the drone's), the sound arrives
 		# through steel. This one ray is why distant hosts sound distant.
 		var bus_volume := volume_db
-		var camera := get_viewport().get_camera_3d()
-		var scene_node = tree.current_scene
-		if camera != null and scene_node is Node3D:
+		# The game's 3D now lives in PSXLook's own World3D, not the root
+		# viewport's. Use the active PSX camera and that world for the one
+		# occlusion ray, and parent positional players inside it.
+		var host: Node = tree.current_scene
+		var scene_node: Node3D = null
+		var camera: Camera3D = get_viewport().get_camera_3d()
+		if PSXLook.world != null:
+			host = PSXLook.world
+			scene_node = PSXLook.world
+			camera = PSXLook.current_camera()
+		elif tree.current_scene is Node3D:
+			scene_node = tree.current_scene
+		if camera != null and scene_node != null:
 			var space: PhysicsDirectSpaceState3D = scene_node.get_world_3d().direct_space_state
 			var query := PhysicsRayQueryParameters3D.create(
 					at, camera.global_position, 1)
@@ -87,7 +97,7 @@ func play(sound: String, at: Vector3 = CENTER, volume_db: float = 0.0, pitch: fl
 				p.bus = "Hull"
 				bus_volume -= 3.0
 		p.volume_db = bus_volume
-		tree.current_scene.add_child(p)
+		host.add_child(p)
 		p.global_position = at
 		_active.append(p)
 		p.finished.connect(func() -> void:
@@ -179,6 +189,20 @@ func _build_streams() -> void:
 	_streams["ping"] = _wav(_ping())
 	_streams["hstep"] = _wav(_hstep())
 	_streams["shutter"] = _wav(_shutter())
+
+	# Cold Hold / crawler set piece. All synthesized, filtered and quiet.
+	var breath := _breath()
+	var bwav := _wav(breath)
+	bwav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	bwav.loop_begin = 0
+	bwav.loop_end = breath.size()
+	_streams["breath"] = bwav
+	_streams["zone_cue"] = _wav(_zone_cue())
+	_streams["crawler_voice"] = _wav(_crawler_voice())
+	_streams["crawler_drag"] = _wav(_hstep())
+	_streams["crawler_scream"] = _wav(_crawler_scream())
+	_streams["wet_crunch"] = _wav(_wet_crunch())
+	_streams["wet_snap"] = _wav(_wet_snap())
 
 
 ## Crossfades the tail into the head so a loop wraps clean.
@@ -295,6 +319,98 @@ func _shutter() -> PackedFloat32Array:
 		b[i] = clack + whirr
 	_lp(b, 0.75)
 	_echo(b, 0.04, 0.2, 2)
+	return b
+
+
+## Wet, laboured breathing: a close-mic'd rasp over a slow sub swell. Four
+## seconds so two breaths fit one loop and the wrap is inaudible.
+func _breath() -> PackedFloat32Array:
+	var dur := 4.0
+	var b := _buf(dur)
+	var lp := 0.0
+	for i in b.size():
+		var t := float(i) / RATE
+		var breath := 0.5 + 0.5 * sin(TAU * 0.5 * t - PI * 0.5)
+		var rasp := _rng.randf_range(-1.0, 1.0) * (0.10 + 0.22 * breath)
+		lp = lp * 0.90 + rasp * 0.10
+		var sub := sin(TAU * 33.0 * t) * (0.05 + 0.05 * breath)
+		b[i] = lp + sub
+	_lp(b, 0.55)
+	_loopify(b, 0.5)
+	return b
+
+## The Cold Hold announcement: a low, descending two-tone through steel.
+func _zone_cue() -> PackedFloat32Array:
+	var b := _buf(2.2)
+	for i in b.size():
+		var t := float(i) / RATE
+		var env := minf(t * 8.0, 1.0) * exp(-maxf(t - 0.15, 0.0) * 1.6)
+		var f := 116.0 - 54.0 * minf(t / 1.8, 1.0)
+		var tone := sin(TAU * f * t) * 0.34 + sin(TAU * f * 0.5 * t) * 0.18
+		var grit := _rng.randf_range(-1.0, 1.0) * exp(-t * 5.0) * 0.05
+		b[i] = (tone + grit) * env
+	_lp(b, 0.72)
+	_echo(b, 0.13, 0.42, 2)
+	return b
+
+## Filtered survivor speech, not a clean recording. Three formants under a
+## broken syllabic envelope; the words are carried by the subtitle channel.
+func _crawler_voice() -> PackedFloat32Array:
+	var dur := 1.35
+	var b := _buf(dur)
+	for i in b.size():
+		var t := float(i) / RATE
+		var syllable := 0.5 + 0.5 * sin(TAU * 4.6 * t + sin(t * 9.0))
+		var env := minf(t * 14.0, 1.0) * minf((dur - t) * 9.0, 1.0) * (0.35 + 0.65 * syllable)
+		var f0 := 108.0 + 16.0 * sin(t * 5.3)
+		var voice := sin(TAU * f0 * t) * 0.32
+		voice += sin(TAU * f0 * 2.7 * t) * 0.16
+		voice += sin(TAU * f0 * 5.1 * t) * 0.08
+		var air := _rng.randf_range(-1.0, 1.0) * 0.07
+		b[i] = (voice + air) * env
+	_lp(b, 0.38)
+	_echo(b, 0.04, 0.24, 2)
+	return b
+
+## A cut-off scream: rises, tears, then stops dead.
+func _crawler_scream() -> PackedFloat32Array:
+	var dur := 0.95
+	var b := _buf(dur)
+	for i in b.size():
+		var t := float(i) / RATE
+		var env := minf(t * 35.0, 1.0) * minf((dur - t) * 30.0, 1.0)
+		var f := 480.0 + 1180.0 * minf(t / 0.62, 1.0) + 90.0 * sin(t * 27.0)
+		var cry := sin(TAU * f * t) * 0.36 + sin(TAU * f * 1.5 * t) * 0.14
+		var tear := _rng.randf_range(-1.0, 1.0) * 0.26
+		b[i] = (cry + tear) * env
+	_lp(b, 0.68)
+	_echo(b, 0.05, 0.3, 2)
+	return b
+
+## Three wet bites in one stream: the Collector's last few seconds.
+func _wet_crunch() -> PackedFloat32Array:
+	var dur := 0.75
+	var b := _buf(dur)
+	for i in b.size():
+		var t := float(i) / RATE
+		var bite := exp(-fmod(t, 0.19) * 36.0)
+		var wet := _rng.randf_range(-1.0, 1.0) * bite * 0.34
+		var bone := sin(TAU * (88.0 - 26.0 * t) * t) * bite * 0.40
+		b[i] = wet + bone
+	_lp(b, 0.55)
+	_echo(b, 0.03, 0.22, 2)
+	return b
+
+## The arm's snap: a hard wet crack and one low impact.
+func _wet_snap() -> PackedFloat32Array:
+	var b := _buf(0.35)
+	for i in b.size():
+		var t := float(i) / RATE
+		var crack := _rng.randf_range(-1.0, 1.0) * exp(-t * 95.0) * 0.65
+		var thump := sin(TAU * 62.0 * t) * exp(-t * 24.0) * 0.55
+		b[i] = crack + thump
+	_lp(b, 0.42)
+	_echo(b, 0.04, 0.25, 2)
 	return b
 
 

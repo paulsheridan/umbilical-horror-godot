@@ -102,6 +102,23 @@ func _run() -> void:
 	_check(lead.normalized().dot(stalker._last_seen_dir) > 0.4,
 			"search remembers the direction the drone was last seen")
 
+	# Flashlight: a lit chassis is a beacon. It reaches past the base sight
+	# range and even defeats low-table cover.
+	drone.set_flashlight(true)
+	stalker.hide_spots = []
+	drone.global_position = Vector3(0, 0.32, -20.0)
+	drone.set_flashlight_enabled(false)
+	_check(not stalker._can_see_drone(), "unlit drone beyond base range is unseen")
+	drone.set_flashlight_enabled(true)
+	_check(stalker._can_see_drone(), "lit drone is seen beyond base range")
+	stalker.hide_spots = [{"center": Vector3(0, 0, 0), "half": Vector2(2.0, 2.0)}]
+	drone.global_position = Vector3(0, 0.32, 0)
+	drone.set_flashlight_enabled(false)
+	_check(not stalker._can_see_drone(), "dark drone under low cover stays hidden")
+	drone.set_flashlight_enabled(true)
+	_check(stalker._can_see_drone(), "the beam defeats low-table cover")
+	drone.set_flashlight_enabled(false)
+
 	# Lurk / don't-look-back scare: only behind the drone and only on live feed.
 	stalker.reset()
 	drone.global_position = Vector3(0, 0.32, 0)

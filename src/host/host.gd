@@ -3,8 +3,10 @@ extends CharacterBody3D
 ##
 ## Perception lives on two channels only:
 ##   - NoiseBus events within a loudness-scaled hearing radius.
-##   - a short sight cone with a world raycast for line of sight.
-## No light raycasting, no "the monster just knows" tracking.
+##   - a short sight cone with a world raycast for line of sight, plus the
+##     drone's flashlight beam: an unoccluded lit chassis is an instant beacon.
+## No "the monster just knows" tracking; every sight rule still runs through
+## the world raycast.
 ##
 ## States:
 ##   PATROL  — walk the authored waypoints.
@@ -16,15 +18,17 @@ extends CharacterBody3D
 ##             Stop moving and it loses you; the search starts at the last
 ##             place it saw motion.
 ##
-## The teach rule: **sight needs motion.** A drone that is not rolling is
-## invisible at every range — no close-range exception. Freeze and the host
-## can walk past you. Noise still gives it a place to search, so stillness
-## buys safety only if you also stop being loud. Hosts are deaf to each other
+## The teach rule: **sight needs motion** — except for the flashlight. A drone
+## that is not rolling is invisible at every range with the lamp off; freeze
+## and the host can walk past you. Switch the beam on with a clear line of
+## sight and the lamp itself is the tell: every host that can see the light
+## turns and pursues, whatever its facing or the old range. Cover still works;
+## a wall breaks the beam. Noise still gives it a place to search, so darkness
+## and silence are what buy safety. Hosts are deaf to each other
 ## (source-tagged NoiseBus events).
 ##
-## The authored M4 stalker is the exception in effect, not in rule: `main`
-## feeds it a live lure, and `relentless` makes it close all the way once
-## stalking.
+## The engine-room Stalker uses its own script/body; this host flag is retained
+## for a relentless variant and is not set by the shipped level.
 
 signal drone_caught
 
@@ -34,6 +38,12 @@ const W_PATROL := 0.8
 const W_HUNT := 1.15            # slow: the drone can outrun a hunter
 const W_STALK := 1.6            # deliberate follow
 const W_STALK_CLOSE := 2.0      # catch-up speed when the trail opens up
+
+## The Kenney locomotion clips are the same rig family the Collector uses.
+## Walk covers patrol and the slow hunt; run is reserved for pursuit, so a
+## host pacing its route never reads as a sprinter.
+const ANIM_BLEND := 0.18
+const WALK_ANIM_SPEED := 0.9    # a heavier shamble than the raw clip
 
 const HEARING_MULT := 20.0      # audible radius ≈ loudness * this
 const LOUD_ESCALATE := 0.7      # a single bang this loud skips the listen
@@ -54,6 +64,10 @@ const RELENTLESS_PATIENCE := 30.0   # authored-loss host only
 const SIGHT_RANGE := 10.0
 const SIGHT_FOV := 70.0         # total frontal cone, degrees
 const MOVE_THRESH := 0.35       # drone speed that counts as visible motion
+## A lit chassis is a beacon: longer eyes, a wider cone, and the stillness
+## rule is suspended entirely. This is the flashlight's cost.
+const LIGHT_SIGHT_MULT := 1.6
+const LIGHT_FOV_MULT := 1.15
 
 const STALK_KEEP := 6.5         # preferred following distance
 const STALK_NEAR := 4.5         # stop closing inside this
@@ -67,12 +81,41 @@ var state: int = State.PATROL
 var drone = null
 var waypoints: Array = []
 
-## Authored-loss host: it still telegraphs and can be cornered, but it will not
-## give up from patience or distance. Only the M4 scripted beat sets this.
+## Per-body tuning. Base values reproduce the old patrol host exactly; the
+## Cold Hold's aggressive bodies override these through configure_aggressive().
+## Keeping them as vars (not constants) means tests and editor placement can
+## tweak one body without changing every host in the ship.
+var sight_range := SIGHT_RANGE
+var sight_fov := SIGHT_FOV
+var move_thresh := MOVE_THRESH
+## Still drones are invisible by default. Zone 2 bodies can see a parked
+## chassis inside this short radius, which is what makes stopping a gamble
+## there rather than an invisibility cloak.
+var still_sight_range := 0.0
+var hearing_mult := HEARING_MULT
+var loud_escalate := LOUD_ESCALATE
+var w_patrol := W_PATROL
+var w_hunt := W_HUNT
+var w_stalk := W_STALK
+var w_stalk_close := W_STALK_CLOSE
+var hunt_patience := HUNT_PATIENCE
+var hunt_error_scale := HUNT_ERROR_SCALE
+var hunt_error_min := HUNT_ERROR_MIN
+var hunt_error_max := HUNT_ERROR_MAX
+## Audible breathing, driven by proximity. Zone 2 bodies are read by sound
+## and lamp-light before they are ever seen.
+var breathing := false
+
+## Debug vision: a ghosted host still patrols but cannot see, hear or catch the
+## fleet. Main sets this on its developer toggle; normal play never does.
+var ghosted := false
+
+## Relentless host: it still telegraphs and can be cornered, but it will not
+## give up from patience or distance. No live host sets it; the engine Stalker
+## is a separate script.
 var relentless := false
 
-## The M4 shadow stalker is a distinct thing: invisible except for the giant
-## shadow it throws, and a moving mass on the radar instead of noise blips.
+## A radar mass is a broad moving body rather than a noise blip.
 var radar_mass := false
 var radar_blips := true
 var low_hum := false
@@ -97,7 +140,17 @@ var _sees := false
 var _caught := false
 var _step_t := 0.0
 var _meshes: Node3D
+var _anim: AnimationPlayer
+var _anim_name := ""
+var _skeleton: Skeleton3D
 var _hum: AudioStreamPlayer3D = null
+var _breath: AudioStreamPlayer3D = null
+
+## Arms-held-out reach, 0..1. The locomotion clip owns every bone, so the pose
+## is layered on after animation (see ReachModifier); at 0 the authored clip is
+## untouched. Read by the focused reach probe.
+var reach_weight := 0.0
+var _reach: ReachModifier = null
 
 # Stuck watch: straight-line seek can still wedge on a corner. If the body is
 # pressing but not traveling, re-route instead of standing there forever.
@@ -116,6 +169,10 @@ func _ready() -> void:
 	floor_snap_length = 0.5
 	# The body is authored in scenes/actors/host.tscn.
 	_meshes = $Meshes
+	_anim = $Meshes/AnimationPlayer
+	_skeleton = $Meshes/Model/Root/Skeleton3D
+	_build_reach()
+	_play_anim("idle", true)
 	_stuck_last = global_position
 	# The stalker's voice: one long sub-bass note, no footsteps. Its volume
 	# and pitch are driven from listener proximity in _update_visuals().
@@ -125,6 +182,34 @@ func _ready() -> void:
 			_hum.position = Vector3(0, 1.2, 0)
 			add_child(_hum)
 			_hum.play()
+	if breathing:
+		_breath = Sfx.loop3d("breath", -40.0)
+		if _breath != null:
+			_breath.position = Vector3(0, 1.5, 0)
+			add_child(_breath)
+			_breath.play()
+
+
+## Zone 2 profile: wider eyes, a real memory, and a body that commits. It is
+## still escapable: break the ray or stop rolling outside the short still
+## radius and it searches the last place it saw motion instead of tracking an
+## invisible coordinate.
+func configure_aggressive() -> void:
+	sight_range = 21.0
+	sight_fov = 105.0
+	move_thresh = 0.12
+	still_sight_range = 5.0
+	hearing_mult = 28.0
+	loud_escalate = 0.62
+	w_patrol = 1.4
+	w_hunt = 2.0
+	w_stalk = 2.6
+	w_stalk_close = 2.9
+	hunt_patience = 20.0
+	hunt_error_scale = 0.10
+	hunt_error_min = 0.5
+	hunt_error_max = 1.4
+	breathing = true
 
 ## Main assigns waypoints (world positions) and calls reset() once placed.
 func reset() -> void:
@@ -144,6 +229,9 @@ func reset() -> void:
 	_stuck_t = 0.0
 	_stuck_run = 0
 	_stuck_last = global_position
+	reach_weight = 0.0
+	if _reach != null:
+		_reach.influence = 0.0
 
 
 func _physics_process(delta: float) -> void:
@@ -200,6 +288,11 @@ func _check_stuck(delta: float) -> void:
 # --------------------------------------------------------------------------
 
 func _sense() -> void:
+	if ghosted:
+		_sees = false
+		if state == State.STALK:
+			_give_up()
+		return
 	if drone == null or not is_instance_valid(drone):
 		_sees = false
 		# Without a drone there is nothing to stare at, but a noise memory
@@ -216,22 +309,57 @@ func _sense() -> void:
 ## Sight requires motion first, then range, a frontal cone, and an
 ## unobstructed world ray. A parked drone is invisible at every range: the
 ## machine reads as scenery, not a threat, until it rolls.
+##
+## The flashlight is the one exception. Its beam is a beacon: if the lit
+## chassis has a clear world-geometry line of sight, this body sees it no
+## matter which way it is facing, how far away it is, or whether the drone is
+## moving. Only an actual occluder (a wall, a bulkhead) defeats it.
 func _can_see_drone() -> bool:
+	if ghosted:
+		return false
 	if drone == null or not is_instance_valid(drone):
 		return false
-	if not _drone_moving():
-		return false
+	if _flashlight_los():
+		return true
 	var to: Vector3 = drone.global_position - global_position
 	to.y = 0.0
 	var d := to.length()
-	if d > SIGHT_RANGE:
+	var lit := _drone_lit()
+	# Motion is the tell. The base host cannot see a parked drone at all; a
+	# Zone 2 body can, but only inside arm's reach of its lamp. A lit chassis
+	# is the exception: the beam itself is the tell, at every range.
+	if not lit and not _drone_moving():
+		if still_sight_range <= 0.0 or d > still_sight_range:
+			return false
+	var max_range: float = sight_range * (LIGHT_SIGHT_MULT if lit else 1.0)
+	if d > max_range:
 		return false
 	if d < 0.05:
 		return true
 	var fwd := -global_transform.basis.z
 	fwd.y = 0.0
 	fwd = fwd.normalized()
-	if fwd.dot(to.normalized()) < cos(deg_to_rad(SIGHT_FOV * 0.5)):
+	var cone: float = sight_fov * (LIGHT_FOV_MULT if lit else 1.0)
+	if fwd.dot(to.normalized()) < cos(deg_to_rad(cone * 0.5)):
+		return false
+	return _clear_los()
+
+
+## The flashlight shortcut: an installed, switched-on lamp plus an
+## unobstructed world-geometry ray from this body's eye to the drone. It
+## deliberately ignores range, the frontal cone, and the drone's facing:
+## light spilling into a room is visible to everything in it. The ray is the
+## same geometry test the ordinary sight rule uses, so a wall still breaks it.
+func _flashlight_los() -> bool:
+	if not _drone_lit():
+		return false
+	return _clear_los()
+
+
+## World geometry only (collision layer 1): hosts never occlude each other's
+## sight, and the drone's own body is not an occluder.
+func _clear_los() -> bool:
+	if drone == null or not is_instance_valid(drone):
 		return false
 	var space := get_world_3d().direct_space_state
 	var q := PhysicsRayQueryParameters3D.create(
@@ -242,15 +370,25 @@ func _can_see_drone() -> bool:
 	return hit.is_empty()
 
 
+## True while the chassis has its fitted flashlight switched on. The beam is
+## read as a threat signal, not as a light meter: no shadow-casting needed.
+func _drone_lit() -> bool:
+	if drone == null or not is_instance_valid(drone):
+		return false
+	return bool(drone.flashlight_installed) and bool(drone.flashlight_on)
+
+
 ## Horizontal speed only: vertical settling or a camera bob is not motion a
 ## host could read as a machine trying to move.
 func _drone_moving() -> bool:
 	if drone == null or not is_instance_valid(drone):
 		return false
-	return Vector2(drone.velocity.x, drone.velocity.z).length() > MOVE_THRESH
+	return Vector2(drone.velocity.x, drone.velocity.z).length() > move_thresh
 
 
 func _on_noise(position: Vector3, loudness: float, source: Node = null) -> void:
+	if ghosted:
+		return
 	# Hosts never hear each other. Two of them in one room otherwise lock into
 	# an endless mutual-investigate loop: every footfall lands inside the
 	# other's hearing radius. Their steps still post to the bus (the scanner
@@ -265,7 +403,7 @@ func _on_noise(position: Vector3, loudness: float, source: Node = null) -> void:
 	if position.distance_to(global_position) < 1.2:
 		return   # its own wet steps (untagged environment echo)
 	var d := position.distance_to(global_position)
-	if d > loudness * HEARING_MULT:
+	if d > loudness * hearing_mult:
 		return
 
 	# Visual stalking already owns the target; noise cannot make it smarter.
@@ -276,12 +414,12 @@ func _on_noise(position: Vector3, loudness: float, source: Node = null) -> void:
 	if state == State.PATROL:
 		# A single very loud event skips the listening phase. Quiet footfalls
 		# and motor hum only make it curious.
-		if loudness >= LOUD_ESCALATE:
+		if loudness >= loud_escalate:
 			_enter_hunt(position)
 		else:
 			_enter_curious(position)
 	elif state == State.CURIOUS:
-		if loudness >= LOUD_ESCALATE or _curious_t >= ESCALATE_DELAY:
+		if loudness >= loud_escalate or _curious_t >= ESCALATE_DELAY:
 			_enter_hunt(position)
 		# Otherwise it keeps listening at the first sound. If the player
 		# freezes, there is no second event and it goes back to patrol.
@@ -325,8 +463,8 @@ func _enter_stalk() -> void:
 	_hunt_arrived = false
 
 
-## Authored-beat / test entry points. Normal play only reaches these through
-## hearing and sight; the scripted M4 beat calls them directly.
+## Test entry points. Normal play only reaches these through hearing and sight;
+## the AI-rule suites call them directly.
 func force_hunt(pos: Vector3) -> void:
 	_heard_pos = pos
 	_enter_hunt(pos)
@@ -347,7 +485,7 @@ func _imprecise(pos: Vector3, err_override: float = -1.0) -> Vector3:
 		return pos
 	var err := err_override
 	if err < 0.0:
-		err = clampf(d * HUNT_ERROR_SCALE, HUNT_ERROR_MIN, HUNT_ERROR_MAX)
+		err = clampf(d * hunt_error_scale, hunt_error_min, hunt_error_max)
 	var ang := atan2(flat.z, flat.x) + _rng.randf_range(-1.22, 1.22)
 	var off := Vector3(cos(ang), 0.0, sin(ang)) * err * _rng.randf_range(0.35, 1.0)
 	return pos + off
@@ -395,7 +533,7 @@ func _do_patrol(delta: float) -> void:
 		_halt()
 		return
 	var target: Vector3 = waypoints[_wp]
-	_seek(target, W_PATROL)
+	_seek(target, w_patrol)
 	if _flat_dist(target) < 0.4:
 		_wp = (_wp + 1) % waypoints.size()
 		_rest = _rng.randf_range(1.2, 2.6)
@@ -411,7 +549,7 @@ func _do_curious(delta: float) -> void:
 
 func _do_hunt(delta: float) -> void:
 	_hunt_timer += delta
-	var patience := RELENTLESS_PATIENCE if relentless else HUNT_PATIENCE
+	var patience := RELENTLESS_PATIENCE if relentless else hunt_patience
 	if _hunt_timer >= patience:
 		_give_up()
 		return
@@ -436,7 +574,7 @@ func _do_hunt(delta: float) -> void:
 		_halt()
 		return
 
-	_seek(_hunt_target, W_HUNT)
+	_seek(_hunt_target, w_hunt)
 	_hunt_walk_t += delta
 	if _hunt_walk_t >= HUNT_WALK_TIME:
 		_hunt_walk_t = 0.0
@@ -467,7 +605,7 @@ func _do_stalk(delta: float) -> void:
 		# all the way; it is fed a live lure by main, not given special sight.
 		var hold: float = (STALK_NEAR + 0.3) if relentless else (STALK_KEEP + 0.3)
 		if d > hold:
-			var spd := W_STALK_CLOSE if d > STALK_FAR else W_STALK
+			var spd := w_stalk_close if d > STALK_FAR else w_stalk
 			_seek(drone.global_position, spd)
 		else:
 			_halt()
@@ -475,7 +613,7 @@ func _do_stalk(delta: float) -> void:
 		# Sight broken. It only has the last place it actually saw motion.
 		_lost_sight_t += delta
 		if _lost_sight_t < LOSE_SIGHT_TIME:
-			_seek(_last_seen_pos, W_HUNT)
+			_seek(_last_seen_pos, w_hunt)
 		else:
 			# Search the corner it vanished around, with a little uncertainty.
 			_enter_hunt(_last_seen_pos, 0.8)
@@ -543,8 +681,23 @@ func _update_visuals(delta: float) -> void:
 	elif hspeed > 0.15:
 		yaw = atan2(-velocity.x, -velocity.z)
 	rotation.y = lerp_angle(rotation.y, yaw, minf(delta * 5.0, 1.0))
+	# Kenney locomotion: idle when planted, walk on the patrol/hunt, and run
+	# only when this body is actively pursuing the drone. Playback speed
+	# follows ground speed so the shuffle does not skate at Zone 2 pace.
+	var want := "idle"
+	if hspeed > 0.15:
+		want = "run" if state == State.STALK else "walk"
+	_play_anim(want)
+	if _anim != null:
+		if _anim_name == "walk":
+			_anim.speed_scale = clampf(hspeed / 0.9, 0.7, 1.5)
+		elif _anim_name == "run":
+			_anim.speed_scale = clampf(hspeed / 2.2, 0.8, 1.35)
+		else:
+			_anim.speed_scale = 1.0
 	# Shamble sway, faster when moving.
 	_meshes.rotation.z = sin(Time.get_ticks_msec() / 1000.0 * hspeed * 2.4) * 0.06
+	_update_reach(delta, hspeed)
 	# Wet steps, posted to the bus so the scanner remembers where it lives.
 	# The stalker has no steps: its hum carries the whole performance.
 	if not low_hum and hspeed > 0.15 \
@@ -561,3 +714,133 @@ func _update_visuals(delta: float) -> void:
 			near = clampf(1.0 - d / 18.0, 0.0, 1.0)
 		_hum.volume_db = lerpf(-34.0, -2.0, near * near)
 		_hum.pitch_scale = lerpf(0.82, 0.66, near)
+	if _breath != null:
+		# Wet, laboured breathing: audible before the body is legible, and
+		# faster while it is hunting. This is the lamp's audio twin.
+		var cam := get_viewport().get_camera_3d()
+		var near := 0.0
+		if cam != null:
+			var d := global_position.distance_to(cam.global_position)
+			near = clampf(1.0 - d / 22.0, 0.0, 1.0)
+		var volume := lerpf(-42.0, -4.0, near * near)
+		_breath.volume_db = volume
+		_breath.pitch_scale = 1.22 if state == State.STALK else 0.92
+
+
+## Switch locomotion clips without restarting the same one every frame. The
+## Kenney library is shared by rig family, so idle/walk/run resolve directly.
+func _play_anim(name: String, force := false) -> void:
+	if _anim == null:
+		return
+	if not force and _anim_name == name:
+		return
+	if not _anim.has_animation(name):
+		return
+	_anim_name = name
+	_anim.play(name, ANIM_BLEND)
+
+
+## A modifier is the only post-animation hook: the imported clip rewrites the
+## whole skeleton every frame, so a bone edit from _physics_process never
+## survives. Added at runtime because it has to live inside the instanced rig.
+func _build_reach() -> void:
+	if _skeleton == null:
+		return
+	_reach = ReachModifier.new()
+	_reach.name = "ReachAim"
+	_reach.body = self
+	_skeleton.add_child(_reach)
+
+
+## The hands come out only in the chase state, while the body is actually
+## running at the drone and can still see it. Everything else — patrol, a
+## noise hunt, standing at hold distance, a lost trail, a ghosted debug body —
+## decays the weight to zero and hands the arms back to the authored clip.
+func _update_reach(delta: float, hspeed: float) -> void:
+	var want := 0.0
+	if state == State.STALK and _sees and hspeed > 0.15 \
+			and not ghosted and drone != null and is_instance_valid(drone):
+		want = 1.0
+	reach_weight = move_toward(reach_weight, want, delta / 0.2)
+	if _reach == null:
+		return
+	_reach.influence = reach_weight
+	if reach_weight > 0.0 and drone != null and is_instance_valid(drone):
+		_reach.target = drone.global_position + Vector3.UP * 0.45
+
+
+## Aims the two arm segments at the drone after the locomotion clip has run.
+## Each segment takes the shortest arc from where the clip put it toward the
+## target, so the shoulders never fold backwards and the elbow keeps its hinge
+## direction. influence is the crossfade: at 0 the skeleton blends every bone
+## straight back to the authored clip, which is how the run takes over again.
+class ReachModifier extends SkeletonModifier3D:
+	var target := Vector3.ZERO
+	var body: Node3D
+	## Shoulder-width split so both hands do not converge on one point.
+	var split := 0.16
+
+	var _arm_l := -1
+	var _arm_r := -1
+	var _fore_l := -1
+	var _fore_r := -1
+	var _hand_l := -1
+	var _hand_r := -1
+	var _side_l := 1.0
+	var _side_r := -1.0
+
+	func _process_modification_with_delta(_delta: float) -> void:
+		if influence <= 0.001 or body == null:
+			return
+		var skel := get_skeleton()
+		if skel == null:
+			return
+		if _arm_l < 0:
+			_resolve(skel)
+		if _arm_l < 0:
+			return
+		var inv := skel.global_transform.affine_inverse()
+		var goal := inv * target
+		# The rig's own lateral axis, converted out of world metres. The rest
+		# pose says which shoulder sits on which side, so mirrored rigs work.
+		var lateral: Vector3 = inv.basis * (body.global_transform.basis.x * split)
+		_aim(skel, _arm_l, _fore_l, goal + lateral * _side_l)
+		_aim(skel, _fore_l, _hand_l, goal + lateral * _side_l)
+		_aim(skel, _arm_r, _fore_r, goal + lateral * _side_r)
+		_aim(skel, _fore_r, _hand_r, goal + lateral * _side_r)
+
+	func _resolve(skel: Skeleton3D) -> void:
+		_arm_l = skel.find_bone("LeftArm")
+		_arm_r = skel.find_bone("RightArm")
+		_fore_l = skel.find_bone("LeftForeArm")
+		_fore_r = skel.find_bone("RightForeArm")
+		_hand_l = skel.find_bone("LeftHand")
+		_hand_r = skel.find_bone("RightHand")
+		var chest := skel.find_bone("Chest")
+		if _arm_l < 0 or _arm_r < 0 or _fore_l < 0 or _fore_r < 0 \
+				or _hand_l < 0 or _hand_r < 0 or chest < 0:
+			_arm_l = -1
+			return
+		var mid := skel.get_bone_global_rest(chest).origin
+		_side_l = signf(skel.get_bone_global_rest(_arm_l).origin.x - mid.x)
+		_side_r = signf(skel.get_bone_global_rest(_arm_r).origin.x - mid.x)
+		if _side_l == 0.0:
+			_side_l = 1.0
+		if _side_r == 0.0:
+			_side_r = -1.0
+
+	func _aim(skel: Skeleton3D, bone: int, child: int, goal: Vector3) -> void:
+		if bone < 0 or child < 0:
+			return
+		var pose := skel.get_bone_global_pose(bone)
+		var cur: Vector3 = skel.get_bone_global_pose(child).origin - pose.origin
+		var want: Vector3 = goal - pose.origin
+		if cur.length_squared() < 0.0000001 or want.length_squared() < 0.0000001:
+			return
+		var delta := Quaternion(cur.normalized(), want.normalized())
+		var wished := Transform3D(Basis(delta) * pose.basis, pose.origin)
+		var parent := skel.get_bone_parent(bone)
+		var local := wished
+		if parent >= 0:
+			local = skel.get_bone_global_pose(parent).affine_inverse() * wished
+		skel.set_bone_pose_rotation(bone, local.basis.get_rotation_quaternion())

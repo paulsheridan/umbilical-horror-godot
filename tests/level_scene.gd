@@ -1,7 +1,7 @@
 extends Node3D
-## Scene-integrity probe: the baked level must stay the source of truth.
-## Verifies the controller wiring, anchors, baked data lists, shared material
-## assets and the room grouping that makes the scene editable.
+## Scene-integrity probe: controller wiring, gameplay anchors, pickups and
+## actor prefabs. Layout and terrain assertions are deliberately excluded so
+## the level can be reshaped without breaking this suite.
 ##
 ## Run: godot --headless --path . res://tests/level_scene.tscn
 
@@ -13,14 +13,15 @@ const PROCESSOR_SCENE := preload("res://scenes/actors/processor.tscn")
 const COLLECTOR_SCENE := preload("res://scenes/actors/collector.tscn")
 const HOST_SCENE := preload("res://scenes/actors/host.tscn")
 const STALKER_SCENE := preload("res://scenes/actors/stalker.tscn")
+const CRAWLER_SCENE := preload("res://scenes/actors/crawler.tscn")
+const PickupProps := preload("res://src/ship/pickup_props.gd")
 
 const ANCHORS := [
-	"Dock", "CameraSite", "Food", "GalleyDoorApproach", "CollectorDeposit",
+	"Dock", "CameraSite", "Flashlight", "GalleyDoorApproach", "CollectorDeposit",
 	"ProcessorPos", "ProcessorPile", "ProcessorDrop",
-]
-const ROOMS := [
-	"Corridor", "Junction", "Spur", "Galley", "Annex", "BerthWing",
-	"ProcessorWing", "World",
+	"Zone2Threshold", "Zone2Relay", "Zone2Spawn0", "Zone2Spawn1",
+	"Zone2Spawn2", "Zone2Spawn3", "CrawlerSetPiece", "CrawlerGrab",
+	"CollectorSacrifice", "EngineEntry", "EngineRelay", "EngineStalkerSpawn",
 ]
 
 var _failed := false
@@ -61,6 +62,9 @@ func _run() -> void:
 	_check(ship.PROCESSOR_PILE.distance_to(
 			(ship.get_node("Data/Anchors/ProcessorPile") as Node3D).position) < 0.001,
 			"the Processor pile resolves from its marker")
+	_check(ship.zone2_threshold.distance_to(
+			(ship.get_node("Data/Anchors/Zone2Threshold") as Node3D).position) < 0.001,
+			"the Deck B threshold resolves from its marker")
 
 	# Moving a marker and re-resolving must move gameplay.
 	var pile_marker := ship.get_node("Data/Anchors/ProcessorPile") as Node3D
@@ -73,28 +77,59 @@ func _run() -> void:
 	ship._ready()
 
 	# --- Baked gameplay data ----------------------------------------------
-	_check(ship.hide_spots.size() == 6, "six low-table/bunk hide spots")
-	_check(ship.ambush_spots.size() == 11, "eleven stalker ambush spots")
-	_check(ship.chokes.size() == 2, "two body-height chokes")
-	_check(ship.loud_doors.size() == 4, "four loud cabin doors")
-	_check(ship.remains.size() == 12, "twelve scattered remains")
 	_check(ship.galley_door != null and ship.camera_module != null,
 			"the galley door and video module resolve by name")
+	_check(ship.camera_module.get_node_or_null("PickupModel") != null
+			and ship.camera_module.get_node_or_null("PickupIndicator") != null,
+			"the video module has a 3D model and a floating pickup marker")
+	_check(ship.flashlight_pickup != null
+			and ship.flashlight_pickup.get_node_or_null("PickupModel") != null
+			and ship.flashlight_pickup.get_node_or_null("PickupIndicator") != null,
+			"the flashlight has a 3D model and a floating pickup marker")
+	if ship.flashlight_pickup != null:
+		var cam_marker := ship.camera_module.get_node("PickupIndicator") as Node3D
+		var light_marker := ship.flashlight_pickup.get_node("PickupIndicator") as Node3D
+		_check(cam_marker.position.y > 0.4 and light_marker.position.y > 0.4,
+				"both pickup markers hover above their pickups")
+		# The markers were dimmed by a third to stop them blowing out into a
+		# white blob on the grainy feed. Construction and the pulse must agree.
+		for pair in [["video module", cam_marker], ["flashlight", light_marker]]:
+			var label: String = pair[0]
+			var marker: Node3D = pair[1]
+			var halo_alpha := ((marker.get_node("Spin/Halo") as MeshInstance3D)
+					.material_override as StandardMaterial3D).albedo_color.a
+			_check(is_equal_approx(halo_alpha, PickupProps.HALO_ALPHA),
+					"the %s marker's halo uses the dimmed alpha" % label)
+			_check(is_equal_approx(halo_alpha,
+					0.34 * PickupProps.MARKER_BRIGHTNESS),
+					"the %s marker's halo alpha is a literal two thirds of 0.34" % label)
+			var ring_alpha := ((marker.get_node("HoverRing") as CSGTorus3D)
+					.material as StandardMaterial3D).albedo_color.a
+			_check(is_equal_approx(ring_alpha,
+					0.85 * PickupProps.MARKER_BRIGHTNESS),
+					"the %s marker's hover ring is dimmed by two thirds" % label)
+			_check(is_equal_approx(
+					(marker.get_node("Glow") as OmniLight3D).light_energy,
+					PickupProps.MARKER_LAMP_ENERGY),
+					"the %s marker's lamp starts at the dimmed energy" % label)
+		var max_pulsed_energy := 0.0
+		for now in [0.0, 0.35, 0.55, 1.1, 2.0]:
+			ship._animate_pickup_fx(now)
+			for rec in ship._pickup_fx:
+				var lamp = rec["lamp"]
+				if lamp != null and is_instance_valid(lamp):
+					max_pulsed_energy = maxf(max_pulsed_energy,
+							(lamp as OmniLight3D).light_energy)
+		_check(max_pulsed_energy <= PickupProps.MARKER_LAMP_ENERGY + 0.001,
+				"the pickup glow pulse never exceeds the dimmed base")
 	_check(ship.collector_pile != null and ship.processor_pile != null,
 			"both feeding piles resolve by name")
+	_check(ship.zone2_door != null and not ship.zone2_door_open,
+			"the Deck B airlock resolves closed at boot")
 	_check(ship.processor_pile.get_child_count() >= 10,
 			"the Processor's starter heap is baked into the scene")
 
-	# --- Scene shape / materials ------------------------------------------
-	var rooms_found := 0
-	var chars := 0
-	for child in ship.get_children():
-		if child.name in ROOMS:
-			rooms_found += 1
-			chars += _count(child)
-	_check(rooms_found == ROOMS.size(), "all eight room containers exist")
-	_check(chars >= 330, "room containers hold the geometry (%d nodes)" % chars)
-
+	# --- Scene materials --------------------------------------------------
 	var material_path := ""
 	for node in ship.find_children("*", "CSGShape3D", true, false):
 		var mat: Material = (node as CSGShape3D).material
@@ -104,16 +139,6 @@ func _run() -> void:
 	_check(material_path.begins_with("res://assets/materials/"),
 			"geometry references shared palette resources (%s)" % material_path)
 
-	var floor_shape := ""
-	for node in ship.find_children("*", "StaticBody3D", true, false):
-		var body := node as StaticBody3D
-		if body.get_child_count() > 0 and body.get_child(0) is CollisionShape3D:
-			var shape := (body.get_child(0) as CollisionShape3D).shape
-			if shape is BoxShape3D:
-				floor_shape = str((shape as BoxShape3D).size)
-	_check(floor_shape == str(Vector3(56.0, 0.5, 31.0)),
-			"the single flat floor collider survived the bake")
-
 	# --- Bay --------------------------------------------------------------
 	_check(bay.pilot_chair != null and bay.fabricator != null
 			and bay.map_table != null, "bay interactables resolve by name")
@@ -121,11 +146,12 @@ func _run() -> void:
 	var start := bay.get_node_or_null("PlayerStart") as Node3D
 	_check(start != null, "the bay has a PlayerStart marker")
 	if start != null:
-		start.position = Vector3(1.0, 0.2, 1.5)
+		var original_start := start.position
+		start.position = original_start + Vector3(0.5, 0.0, 0.5)
 		bay._ready()
 		_check(bay.player_start.distance_to(start.position) < 0.001,
 				"editing PlayerStart moves the player spawn")
-		start.position = Vector3(4.8, 0.2, 2.8)
+		start.position = original_start
 		bay._ready()
 
 	# --- Actor prefabs -----------------------------------------------------
@@ -146,8 +172,12 @@ func _run() -> void:
 			"the drone prefab owns its camera")
 	_check(d.get_node_or_null("Chassis/TrackL") != null
 			and d.get_node_or_null("Chassis/TrackR") != null
-			and d.get_node_or_null("Lamp") != null,
-			"the drone prefab owns its tracks and lamp")
+			and d.get_node_or_null("Lamp") is OmniLight3D,
+			"the drone prefab owns its tracks and emergency lamp")
+	_check(d.get_node_or_null("Flashlight/Beam") is SpotLight3D
+			and d.flashlight is SpotLight3D
+			and d.flashlight.spot_angle <= 25.0,
+			"the drone prefab owns a narrow-beam flashlight add-on")
 	p.queue_free()
 	d.queue_free()
 
@@ -161,16 +191,32 @@ func _run() -> void:
 
 	var col = COLLECTOR_SCENE.instantiate()
 	add_child(col)
-	_check(col.get_node_or_null("Rig/Hips/Head") is Node3D and col._head != null,
-			"the Collector prefab owns its hunched body")
+	_check(col.get_node_or_null("Rig/Model/Root/Skeleton3D") is Skeleton3D
+			and col._skeleton != null,
+			"the Collector prefab owns its animated Kenney body")
+	_check(col._anim != null and col._anim.has_animation("idle")
+			and col._anim.has_animation("walk")
+			and col._anim.has_animation("jump"),
+			"the Collector prefab owns its idle, walk and jump clips")
+	_check(col._look != null and col._look_target != null,
+			"the Collector prefab owns its head-tracking rig")
 	_check(col._lantern != null and col._sack != null,
 			"the Collector prefab owns its lantern and drag sack")
 	col.queue_free()
 
 	var h = HOST_SCENE.instantiate()
 	add_child(h)
+	_check(h.get_node_or_null("Meshes/Model/Root/Skeleton3D") is Skeleton3D
+			and h._skeleton != null,
+			"the host prefab owns its animated Kenney body")
+	_check(h._anim != null and h._anim.has_animation("idle")
+			and h._anim.has_animation("walk")
+			and h._anim.has_animation("run"),
+			"the host prefab owns its idle, walk and run clips")
 	_check(h.get_node_or_null("Meshes") is Node3D and h._meshes != null,
-			"the host prefab owns its shadow body")
+			"the host prefab keeps its Meshes sway node")
+	_check(h.get_node_or_null("CollisionShape3D") is CollisionShape3D,
+			"the host prefab keeps its collision capsule")
 	h.queue_free()
 
 	var st = STALKER_SCENE.instantiate()
@@ -182,12 +228,22 @@ func _run() -> void:
 			"the Stalker prefab owns its limbs")
 	st.queue_free()
 
+	var cr = CRAWLER_SCENE.instantiate()
+	add_child(cr)
+	_check(cr is Node3D and not (cr is PhysicsBody3D),
+			"the crawler is a collision-free set piece, not a body")
+	_check(cr.get_node_or_null("Rig/Torso") is Node3D
+			and cr.get_node_or_null("Rig/Head") is Node3D,
+			"the crawler prefab owns its torso and head")
+	_check(cr.get_node_or_null("Rig/ArmL") is Node3D
+			and cr.get_node_or_null("Rig/ArmR") is Node3D,
+			"the crawler prefab drags itself with two arms")
+	_check(cr.get_node_or_null("Rig/AlienArm") is Node3D,
+			"the crawler prefab carries its authored yank arm")
+	_check(cr.get_node_or_null("Rig/LegL") == null
+			and cr.get_node_or_null("Rig/LegR") == null,
+			"the crawler has no legs")
+	cr.queue_free()
+
 	print("LEVEL SCENE %s" % ("FAIL" if _failed else "PASS"))
 	get_tree().quit(1 if _failed else 0)
-
-
-func _count(node: Node) -> int:
-	var total := 1
-	for child in node.get_children():
-		total += _count(child)
-	return total

@@ -1,0 +1,13 @@
+PSX Look - license
+
+Made and licensed by heyheythere (https://heyheythere.itch.io)
+
+You may use these shaders, scripts and demo textures in any number of commercial and non-commercial
+games, apps and videos, modified or not. No attribution is required.
+
+You may not sell, share or redistribute the shaders, scripts or demo textures themselves, alone or as
+part of another asset pack, template or library.
+
+heyheythere's own packs may carry PSX Look inside them; there it comes under that pack's licence.
+
+The software is provided "as is", without warranty of any kind.

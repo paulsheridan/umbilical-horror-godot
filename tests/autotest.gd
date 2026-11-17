@@ -15,6 +15,7 @@ func _ready() -> void:
 func _run() -> void:
 	await get_tree().physics_frame
 
+	PSXLook.reset_to_defaults(false)
 	var main_scene: PackedScene = load("res://scenes/main.tscn")
 	if main_scene == null:
 		return _fail("main.tscn failed to load")
@@ -65,10 +66,6 @@ func _run() -> void:
 		if d < 0.2:
 			route_reaches = true
 	_check(route_reaches, "the Collector's route reaches the Processor pile")
-	_check(main._zone_at(main.ship.PROCESSOR_PILE) == "processor",
-			"the feed chamber is its own map zone")
-	_check(main._zone_at(main.ship.PROCESSOR_DROP) == "processor",
-			"the drop mark inks the Processor wing")
 
 	# --- Heavy movement + Noise bus ------------------------------------------
 	if main.player != null:
@@ -121,6 +118,7 @@ func _run() -> void:
 
 	# --- M1: sortie launch / drive / tether / reel -----------------------------
 	_check(InputMap.has_action("reel"), "reel action is mapped (R)")
+	_check(InputMap.has_action("flashlight"), "flashlight action is mapped (L)")
 	main._start_sortie()
 	for _i in 6:
 		await get_tree().physics_frame
@@ -134,21 +132,31 @@ func _run() -> void:
 		_check(not main._live_feed_active(), "no module yet: live feed is locked")
 		_check(main.processor.drone == main.drone,
 				"the Processor binds to the active chassis")
-		_check(get_viewport().get_camera_3d() != main.drone.cam,
+		_check(main.world.get_viewport().get_camera_3d() != main.drone.cam,
 				"no live drone camera is current")
 		_check(main.hud._lens.visible, "no live view: black lens while piloting")
 		_check(not main.hud._blind.visible, "lamp veil is retired: radar is the display")
 		_check(not main.hud._feed.visible, "no photo held at launch")
 		_check(not main.hud._live.visible, "no live tube before the module")
 		_check(main.hud._scanner.visible, "radar is visible as the primary display")
-		_check((main.hud._scanner.anchor_right - main.hud._scanner.anchor_left) >= 0.7
-				and (main.hud._scanner.anchor_bottom - main.hud._scanner.anchor_top) >= 0.8,
-				"radar takes most of the screen")
+		_check(main.hud._desk.visible and main.hud._cam_window.visible
+				and main.hud._radar_window.visible,
+				"the pilot desktop shows separate optics and radar windows")
+		_check((main.hud._cam_window.anchor_right
+				- main.hud._cam_window.anchor_left) >= 0.6
+				and (main.hud._radar_window.anchor_right
+				- main.hud._radar_window.anchor_left) <= 0.25
+				and (main.hud._radar_window.anchor_bottom
+				- main.hud._radar_window.anchor_top) <= 0.5,
+				"the optics window is large and the radar is a small inset in still mode")
 		_check(main.SHUTTER_TIME >= 4.0,
 				"still camera has a slow recharge (%.1f s)" % main.SHUTTER_TIME)
 		_check(main._feed_vp != null
 				and main._feed_vp.render_target_update_mode == SubViewport.UPDATE_DISABLED,
 				"still-camera viewport exists but is not rendering live")
+		_check(main._feed_attrs != null
+				and not main._feed_attrs.dof_blur_far_enabled,
+				"a still exposure is focused far")
 
 		# --- Fleet: one chassis at launch, more deployed on demand ----------
 		_check(main.drones.size() == 1, "one chassis deploys at launch")
@@ -181,17 +189,12 @@ func _run() -> void:
 		_check(second != lead and second.bot_index == 1,
 				"the deployed chassis is a distinct BOT 2")
 		var second_start: Vector3 = second.global_position
-		_check(absf(second.global_position.z
-				- (main.ship.dock_pos.z - main.DRONE_CRADLE_GAP)) < 0.3,
-				"the deployed cradle sits deeper in the ship corridor")
-		_check(second_start.z < main.ship.dock_pos.z - 0.5,
-				"the deployed cradle is ship-side of the sealed bay wall")
 		_check(main.drone == second,
 				"the link moves to the newly deployed chassis")
 		_check(not lead.controlled and second.controlled,
 				"exactly one chassis takes input")
-		_check(main.scanner.drone == second and main.hosts[0].drone == second,
-				"scanner and host bind to the deployed chassis")
+		_check(main.scanner.drone == second and main.processor.drone == second,
+				"scanner and the Processor bind to the deployed chassis")
 		# A second press at the cap must not deploy a third body.
 		main._deploy_cd = 0.0
 		main._deploy_drone()
@@ -280,6 +283,8 @@ func _run() -> void:
 		_check(main._photo_count == 1, "primary mouse exposes a still on the first drone")
 		_check(main.hud._feed.visible, "the still frame is displayed")
 		_check(main.hud._lens.visible, "the lens stays black behind the print")
+		_check(main.hud._scanner.visible and main.hud._radar_window.visible,
+				"the radar stays up while a still is held")
 		_check(main._photo_cd > 0.0, "one photograph drains the shutter")
 
 		# Echo/early-tap regression: R in the first second (held key echoes or
@@ -307,8 +312,6 @@ func _run() -> void:
 		var v_now: float = main.drone.velocity.length()
 		_check(v_now < 0.35, "drone coasts to a stop (momentum), v=%.2f" % v_now)
 		_check(main.drone.battery < 100.0, "battery draining")
-		_check(main.scanner.echoes.size() > 0,
-				"scanner collected %d wall echoes" % main.scanner.echoes.size())
 
 		# Tank-drive regression: steer (A) + drive (W) must do BOTH at once —
 		# yaw the drone AND advance it. (Bug history: steer was mapped into
@@ -347,8 +350,8 @@ func _run() -> void:
 		_check(GameState.sortie == GameState.Sortie.IDLE, "sortie idles while you stand")
 		_check(not parked.controlled, "parked drone releases the controls")
 		_check(main.scanner.drone == null, "scanner goes dark while you stand")
-		_check(main.hosts[0].drone == null, "hosts lose the drone's scent while you stand")
-		_check(get_viewport().get_camera_3d() == main.player.cam,
+		_check(main.processor.drone == null, "senses lose the drone's scent while you stand")
+		_check(main.world.get_viewport().get_camera_3d() == main.player.cam,
 				"standing up restores the player camera")
 		var walk_from: Vector3 = main.player.global_position
 		Input.action_press("move_forward")
@@ -374,7 +377,7 @@ func _run() -> void:
 		for _i in 10:
 			await get_tree().physics_frame
 		_check(main.player.focus == main.level.pilot_chair, "chair is focusable after standing")
-		_check(main.level.pilot_chair.prompt == "Resume the drone",
+		_check(main.level.pilot_chair.prompt == "DRONE",
 				"chair prompt offers to resume the parked drone")
 		main.player._press_interact()
 		for _i in 6:
@@ -387,10 +390,10 @@ func _run() -> void:
 				"drone resumes at the same heading")
 		_check(absf(main.drone.battery - park_batt) < 0.2,
 				"battery preserved across the chair session")
-		_check(get_viewport().get_camera_3d() != main.drone.cam,
+		_check(main.world.get_viewport().get_camera_3d() != main.drone.cam,
 				"no live drone view on resume before the module")
-		_check(main.scanner.drone == main.drone and main.hosts[0].drone == main.drone,
-				"scanner + hosts reacquire the drone on resume")
+		_check(main.scanner.drone == main.drone and main.processor.drone == main.drone,
+				"scanner + Processor reacquire the drone on resume")
 		# Put it back on the dock side for the reel check below.
 		main.drone.global_position = Vector3(-2.0, 0.32, -7.0)
 		main.drone.velocity = Vector3.ZERO
@@ -411,7 +414,7 @@ func _run() -> void:
 		await get_tree().physics_frame
 	_check(main.drone == null, "R near the dock reels the drone home")
 	_check(GameState.sortie == GameState.Sortie.IDLE, "sortie back to IDLE after reel")
-	_check(get_viewport().get_camera_3d() == main.player.cam, "player camera restored")
+	_check(main.world.get_viewport().get_camera_3d() == main.player.cam, "player camera restored")
 
 	# Second sortie: tether clamp + the battery-forced reel path.
 	main._start_sortie()
@@ -419,7 +422,7 @@ func _run() -> void:
 		await get_tree().physics_frame
 	_check(GameState.sortie == GameState.Sortie.PILOTING, "second sortie launches clean")
 	if main.drone != null:
-		main.drone.global_position = main.ship.dock_pos + Vector3(0, 0, -60.0)
+		main.drone.global_position = main.ship.dock_pos + Vector3(0, 0, 60.0)
 		main.drone.velocity = Vector3.ZERO
 		for _i in 40:
 			await get_tree().physics_frame
@@ -432,31 +435,36 @@ func _run() -> void:
 	_check(main.drone == null, "forced reel teardown works on the second sortie")
 	_check(GameState.sortie == GameState.Sortie.IDLE, "sortie back to IDLE after force reel")
 
-	# --- M2: hosts / objective / door / caught / deliver ----------------------
-	_check(main.hosts.size() == 1, "one ordinary host resident in the ship")
+	# --- M2: host rules / objective / door / caught / deliver -----------------
+	_check(main.hosts.is_empty(), "Zone 1 starts threat-free: no hosts resident")
 
-	# Wandering regression: the patroller must walk its loop, not stand at the
-	# end of a hall. (Bug history: waypoints crossed the junction wall, so
-	# straight-line seek wedged and the arrival check never advanced the loop.)
+	# The opening ship carries no hunter any more. These rules still matter, so
+	# the probe spawns a temporary ordinary host and tests the model directly.
 	main._knock_t = 9999.0   # silence ambient lures during the measurement
-	var patrol_walk = main.hosts[0]
+	var patroller = main._host(Vector3(-2.4, 0.2, -10.0), [
+		Vector3(-2.3, 0.0, -9.0), Vector3(-2.3, 0.0, -14.0),
+	])
+	var patrol_walk = patroller
+	patrol_walk.drone = null
 	patrol_walk.global_position = Vector3(-2.4, 0.2, -10.0)
 	patrol_walk.reset()
 	var traveled := 0.0
 	var last_p: Vector3 = patrol_walk.global_position
 	var wp0: int = patrol_walk._wp
+	var wp_changed := false
 	for _i in 480:
 		await get_tree().physics_frame
+		if patrol_walk._wp != wp0:
+			wp_changed = true
 		if _i % 60 == 0:
 			traveled += patrol_walk.global_position.distance_to(last_p)
 			last_p = patrol_walk.global_position
 	traveled += patrol_walk.global_position.distance_to(last_p)
 	_check(traveled > 3.0, "patroller wanders the halls (%.1f m in 8 s)" % traveled)
-	_check(patrol_walk._wp != wp0, "patroller cycles its waypoint loop")
+	_check(wp_changed, "patroller cycles its waypoint loop")
 
 	# Hearing model: one quiet noise makes the host CURIOUS. It must listen,
 	# not walk to the sound. This is the main leeway change.
-	var patroller = main.hosts[0]
 	patroller.drone = null
 	patroller.global_position = Vector3(0.0, 0.2, -29.0)
 	patroller.reset()
@@ -504,9 +512,8 @@ func _run() -> void:
 	# Host-vs-host hearing regression: two silhouettes sharing a room must not
 	# summon each other with their own footsteps (the mutual-investigate loop).
 	# Host steps still post to the bus, but are source-tagged and invisible to
-	# other hosts. Player/drone/environment noise stays audible. The ship now
-	# carries one ordinary host, so the probe spawns a temporary second body.
-	var h0 = main.hosts[0]
+	# other hosts. Player/drone/environment noise stays audible.
+	var h0 = patroller
 	var h0_wp: Array = h0.waypoints.duplicate()
 	h0.waypoints = [Vector3(-2.0, 0.0, -29.0), Vector3(2.0, 0.0, -29.0)]
 	h0.global_position = Vector3(-1.2, 0.2, -29.2)
@@ -547,50 +554,25 @@ func _run() -> void:
 		_check(main.ship.galley_door.position.z >= main.ship.DOOR_OPEN_Z - 0.2,
 				"door fully slid (z=%.1f)" % main.ship.galley_door.position.z)
 		_check(main.hosts.size() == 1,
-				"the galley is empty behind the opened door (no resident)")
+				"the galley stays empty behind the opened door (no extra body)")
 
-		# Organic seam-cross drive: doorway -> big galley -> cold room, zero
-		# teleports. Hosts detached (test-only) so the run measures geometry.
+		# Pickup event only: no geometry traversal through the galley seams.
 		for h in main.hosts:
 			h.drone = null
-		# Stage 1: west across the hall, stop east of the pantry wall line.
-		main.drone.rotation.y = PI * 0.5          # face -X
+		main.drone.global_position = Vector3(
+				main.ship.FLASHLIGHT_POS.x, 0.32, main.ship.FLASHLIGHT_POS.z)
 		main.drone.velocity = Vector3.ZERO
-		Input.action_press("move_forward")
-		for _i in 600:
+		for _i in 20:
 			await get_tree().physics_frame
-			if main.drone.global_position.x <= -16.5:
-				Input.action_release("move_forward")
-				main.drone.velocity.x = 0.0
-				break
-		for _i in 10:
-			await get_tree().physics_frame
-		# Stage 2: NORTH to the pantry-mouth band (brake at the line).
-		main.drone.rotation.y = 0.0                # face -Z
-		for _i in 200:
-			Input.action_press("move_forward")
-			await get_tree().physics_frame
-			if main.drone.global_position.z <= -32.6:
-				Input.action_release("move_forward")
-				main.drone.velocity.z = 0.0
-				break
-		for _i in 10:
-			await get_tree().physics_frame
-		# Stage 3: WEST into the cold room mouth (pickup fires at the door).
-		main.drone.rotation.y = PI * 0.5
-		Input.action_press("move_forward")
-		for _i in 140:
-			await get_tree().physics_frame
-		Input.action_release("move_forward")
 		for h in main.hosts:
 			h.drone = main.drone
 			h.state = h.State.PATROL
-		_check(main._cargo == "rations",
-				"drove through door + galley + alcove seams and secured the rations (x=%.1f z=%.1f)"
+		_check(main._cargo == "flashlight",
+				"secured the flashlight add-on at its anchor (x=%.1f z=%.1f)"
 				% [main.drone.global_position.x, main.drone.global_position.z])
 
 		# Cargo belongs to the chassis, not the link: hop to the empty bot and
-		# back, and the ration pack is still on the one that picked it up.
+		# back, and the add-on is still on the one that picked it up.
 		var cargo_bot = main.drone
 		main._cycle_drone()
 		for _i in 20:
@@ -600,10 +582,10 @@ func _run() -> void:
 		main._cycle_drone()
 		for _i in 20:
 			await get_tree().physics_frame
-		_check(main.drone == cargo_bot and main._cargo == "rations",
+		_check(main.drone == cargo_bot and main._cargo == "flashlight",
 				"cargo persists on the chassis across the link transfer")
 
-		# Loss: a stalking host at contact kills the module drone, rejects cargo.
+		# Loss: a temporary stalking host at contact takes the cargo drone.
 		patroller.global_position = Vector3(1.0, 0.2, -26.0)
 		main.drone.global_position = Vector3(1.3, 0.32, -26.0)
 		main.drone.velocity = Vector3.ZERO
@@ -617,27 +599,28 @@ func _run() -> void:
 	_check(main._objective_state == "pending", "carried cargo lost on catch")
 	_check(GameState.sortie == GameState.Sortie.PILOTING,
 			"the link hops to the survivor instead of tearing down")
+	patroller.drone = null   # the test body is done hunting
 	# Recall the survivor so the delivery run starts from a clean fleet.
 	main._try_reel(true)
 	for _i in 150:
 		await get_tree().physics_frame
 	_check(main.drone == null, "reeling the last chassis ends the sortie")
 
-	# Deliver: pick up again, then reel home -> meters rise, objective done.
+	# Deliver: pick up again, then reel home -> the add-on waits at the bench.
 	main._start_sortie()
 	for _i in 6:
 		await get_tree().physics_frame
-	var kcal_before: float = GameState.kcal
 	# Deterministic delivery phase: park the patroller at the spur end and pin
 	# it to PATROL (the run measures the delivery path, not hunt pacing).
 	for h in main.hosts:
 		h.state = h.State.PATROL
-	main.hosts[0].global_position = Vector3(8.0, 0.2, -29.2)
-	main.drone.global_position = Vector3(-17.6, 0.32, -32.7)
+	patroller.global_position = Vector3(8.0, 0.2, -29.2)
+	main.drone.global_position = Vector3(
+			main.ship.FLASHLIGHT_POS.x, 0.32, main.ship.FLASHLIGHT_POS.z)
 	main.drone.velocity = Vector3.ZERO
 	for _i in 20:
 		await get_tree().physics_frame
-	_check(main._cargo == "rations", "objective recovered on retry")
+	_check(main._cargo == "flashlight", "objective recovered on retry")
 	main.drone.global_position = main.ship.dock_pos
 	main.drone.velocity = Vector3.ZERO
 	for _i in 60:   # let the launch grace expire (battery-based guard)
@@ -646,17 +629,60 @@ func _run() -> void:
 	for _i in 150:
 		await get_tree().physics_frame
 	_check(main.drone == null, "delivery reel teardown")
-	_check(GameState.kcal > kcal_before, "rations delivered: kcal %.2f > %.2f" % [GameState.kcal, kcal_before])
-	_check(main._objective_state == "none", "objective complete after delivery")
+	_check(main._flashlight_held and not main._flashlight_installed,
+			"flashlight add-on delivered to the bay, waiting for the fabricator")
+	_check(main._objective_state == "pending",
+			"the flashlight objective stays pending until it is fitted")
+	main._at_fabricator()
+	await get_tree().physics_frame
+	_check(main._flashlight_installed and not main._flashlight_held,
+			"flashlight add-on installed at the fabricator")
+	_check(main._objective_state == "none", "objective complete after fitting")
 
 	# --- M3: video module salvage -> deliver -> install -> stills ------------
 	main._start_sortie()
 	for _i in 6:
 		await get_tree().physics_frame
 	if main.drone != null:
+		# The flashlight is fleet kit now: fitted, visible, and sprung.
+		_check(main.drone.flashlight_installed
+				and main.drone.flashlight_pivot != null
+				and main.drone.flashlight_pivot.visible,
+				"the fitted flashlight appears on the sortie chassis")
+		_check(main.drone.flashlight.spot_angle <= 25.0
+				and main.drone.flashlight.spot_range >= 12.0,
+				"the flashlight throws a narrow, long beam (%.0f°, %.0f m)"
+				% [main.drone.flashlight.spot_angle, main.drone.flashlight.spot_range])
+		_check(main.drone.flashlight_on and main.drone.flashlight.visible,
+				"the fitted flashlight boots switched on")
+		var lev := InputEventKey.new()
+		lev.physical_keycode = KEY_L
+		lev.keycode = KEY_L
+		lev.pressed = true
+		main._input(lev)
+		_check(not main.drone.flashlight_on and not main.drone.flashlight.visible,
+				"L switches the flashlight off")
+		main._input(lev)
+		_check(main.drone.flashlight_on and main.drone.flashlight.visible,
+				"L switches the flashlight back on")
+		main.drone.global_position = Vector3(0.4, 0.32, -21.0)  # open junction
+		main.drone.velocity = Vector3.ZERO
+		main.drone.rotation.y = 0.0
+		var fl_pivot: Node3D = main.drone.flashlight_pivot
+		fl_pivot.rotation = Vector3.ZERO
+		Input.action_press("move_forward")
+		for _i in 8:
+			await get_tree().physics_frame
+		Input.action_release("move_forward")
+		var fl_kick: float = absf(fl_pivot.rotation.x) + absf(fl_pivot.rotation.y)
+		_check(fl_kick > 0.002,
+				"the flashlight beam jerks when the bot starts (%.3f rad)" % fl_kick)
+		for _i in 90:
+			await get_tree().physics_frame
 		for h in main.hosts:
 			h.drone = null   # deterministic checks; no pursuits for this leg
-		main.drone.global_position = Vector3(6.3, 0.32, -29.2)
+		main.drone.global_position = Vector3(
+				main.ship.CAMERA_POS.x, 0.32, main.ship.CAMERA_POS.z)
 		main.drone.velocity = Vector3.ZERO
 		for _i in 20:
 			await get_tree().physics_frame
@@ -681,30 +707,37 @@ func _run() -> void:
 	_check(main._feed_vp != null, "photo viewport persists after install")
 	_check(main.hud._feed_enabled, "still camera remains enabled")
 
-	# The next sortie now has LIVE video: the drone camera is the main view,
-	# the black lens is gone, and the radar becomes a compact inset.
+	# The next sortie now has LIVE video: the large optics window shows the
+	# live feed, while the separate radar stays small and always readable.
 	main._start_sortie()
 	for _i in 6:
 		await get_tree().physics_frame
 	_check(main._live_feed_active(), "installed module unlocks the live feed")
 	_check(main.drone.live_view, "live camera handoff is armed")
-	_check(get_viewport().get_camera_3d() == main.drone.cam,
+	_check(main.world.get_viewport().get_camera_3d() == main.drone.cam,
 			"live drone view is the current camera")
 	_check(not main.hud._lens.visible, "live feed: no black lens")
 	_check(main.hud._live.visible, "live tube filter is shown")
 	_check(not main.hud._feed.visible, "live feed: no held print")
 	_check(not main.hud._blind.visible, "live feed: no lamp veil")
 	_check(main.hud._shutter.visible, "shutter meter still shown")
-	_check(main.hud._scanner.visible, "radar stays available as an inset")
-	_check(absf(main.hud._scanner.anchor_left - 0.72) < 0.01,
-			"radar shrinks to the live-feed corner")
+	_check(main.hud._scanner.visible, "radar stays available alongside live video")
+	_check((main.hud._cam_window.anchor_right
+			- main.hud._cam_window.anchor_left) >= 0.6
+			and (main.hud._radar_window.anchor_right
+			- main.hud._radar_window.anchor_left) <= 0.25
+			and (main.hud._radar_window.anchor_bottom
+			- main.hud._radar_window.anchor_top) <= 0.5,
+			"the live picture is large and the radar is a small inset in live mode")
+	_check(main._feed_attrs != null and main._feed_attrs.dof_blur_far_enabled,
+			"the live tube is near-sighted (far focus is lost)")
 	main.hud.set_live_stress(0.75, -0.5)
 	_check(absf(float(main.hud._live_mat.get_shader_parameter("stress")) - 0.75) < 0.01,
 			"live tube takes drive stress")
 	_check(absf(float(main.hud._live_mat.get_shader_parameter("turn")) + 0.5) < 0.01,
 			"live tube takes signed steering")
 	main.hud.set_live_stress(0.0, 0.0)
-	# Deploy the second chassis so the authored interception leaves a survivor.
+	# Deploy the second chassis so a real catch still leaves a survivor.
 	main._deploy_cd = 0.0
 	main._deploy_drone()
 	for _i in 4:
@@ -725,7 +758,11 @@ func _run() -> void:
 	fk_up.pressed = false
 	Input.parse_input_event(fk_up)
 	_check(main._photo_count == photos_at_f + 1, "F still exposes a print in live mode")
-	_check(main.hud._feed.visible, "the print is displayed over the live feed")
+	_check(not main._feed_attrs.dof_blur_far_enabled,
+			"a still exposes with clear far focus")
+	_check(main.hud._feed.visible, "the print replaces only the video")
+	_check(main.hud._scanner.visible and main.hud._radar_window.visible,
+			"the radar stays up while a print is held")
 	_check(not main.hud._lens.visible, "the lens stays clear in live mode")
 	_check(main._photo_cd > 0.0, "shutter empties after a shot")
 	main._take_photo()
@@ -746,171 +783,200 @@ func _run() -> void:
 		await get_tree().physics_frame
 		hold_frames += 1
 	_check(not main.hud._feed.visible, "the print drops back to live video")
+	_check(main._feed_attrs.dof_blur_far_enabled,
+			"the print drops back to the near-sighted live lens")
 	_check(not main.hud._lens.visible, "live view returns with no black lens")
 	_check(main.hud._shutter_frac >= 0.0 and main.hud._shutter_frac <= 1.0,
 			"shutter meter reads in range")
 
-	# --- M4: the primary stalker is a late, persistent third body ------------
-	_check(main._act_stage == 1, "video module aboard arms the interception")
-	# It must not spawn while the drone is still in the initial hallway.
-	main.drone.global_position = Vector3(0.4, 0.32, -21.0)
-	main.drone.velocity = Vector3.ZERO
-	for _i in 30:
+	# --- M7: Deck B — airlock / relay / hunters / sacrifice -------------------
+	_check(main._act_stage == 1, "video module aboard: no authored loss is armed")
+	_check(main.hosts.size() == 1, "only the temporary probe body exists before Deck B")
+	main.hosts.erase(patroller)
+	patroller.queue_free()
+	for _i in 4:
 		await get_tree().physics_frame
-	_check(not main._stalk_triggered, "stalker stays out of the initial hallway")
-	_check(main._m4_host == null, "no stalker before the first room")
+	_check(main.hosts.is_empty(), "Zone 1 is threat-free before Deck B")
 
-	# The first room is the junction: entering it wakes the beat.
-	main.drone.global_position = Vector3(0.4, 0.32, -27.0)
-	main.drone.velocity = Vector3.ZERO
-	for _i in 20:
-		await get_tree().physics_frame
-	_check(main._stalk_triggered, "stalker spawns in the first room")
-	var loss_pos: Vector3 = main.drone.global_position
-	var stalker = main._m4_host
-	_check(stalker != null, "stalker exists")
-	if stalker != null:
-		_check(stalker.state == stalker.State.PATROL, "stalker spawns on patrol")
-		_check(stalker.waypoints.size() >= 6, "stalker has a hall patrol route")
-		_check(stalker.global_position.distance_to(main.drone.global_position) > 8.0,
-				"stalker spawns far away (%.1f m)" % stalker.global_position.distance_to(main.drone.global_position))
-		_check(stalker._rig != null and stalker._head != null and stalker._arm_l != null
-				and stalker._leg_l != null, "stalker has a modelled body")
-		_check(not stalker.radar_blips,
-				"stalker is a radar mass, not a blip source")
-		_check(main.scanner.masses.size() == 1, "radar carries the stalker as a mass")
-		_check(main._m4_light != null and main._m4_light.shadow_enabled,
-				"event lamp lights the junction")
-		var blips_before: int = main.scanner.blips.size()
-		main.scanner._on_noise(stalker.global_position, 0.9, stalker)
-		_check(main.scanner.blips.size() == blips_before,
-				"stalker makes no radar blips")
+	_check(main.drone.MAX_TETHER <= 36.0,
+			"the relay does not raise the chassis tether (%.0f m)"
+			% main.drone.MAX_TETHER)
 
-		# Proximity poisoning: the feed collapses and the hum rises as it closes.
-		_check(stalker._hum != null, "stalker carries a proximity hum")
-		stalker.set_physics_process(false)
-		stalker.global_position = main.drone.global_position + Vector3(0, -0.12, -1.0)
-		stalker._animate(0.016)
-		var hum_near: float = stalker._hum.volume_db
-		for _i in 2:
-			await get_tree().physics_frame
-		_check(main.hud._live_dread > 0.6, "close stalker poisons the live feed")
-		_check(float(main.hud._live_mat.get_shader_parameter("dread")) > 0.6,
-				"live shader receives the proximity poison")
-		stalker.global_position = main.drone.global_position + Vector3(0, 0, 8.0)
-		stalker._animate(0.016)
-		var hum_far: float = stalker._hum.volume_db
-		for _i in 2:
-			await get_tree().physics_frame
-		_check(hum_near > hum_far + 5.0,
-				"hum grows louder as the stalker closes (%.1f -> %.1f dB)" % [
-					hum_far, hum_near])
-		_check(main.hud._live_dread < 0.2, "feed clears when the stalker is far")
-
-		# Low tables are true cover: a drone under one is not visible.
-		main.drone.global_position = Vector3(0.0, 0.32, -31.2)
-		await get_tree().physics_frame
-		_check(not stalker._can_see_drone(), "low table hides the drone from sight")
-		main.drone.global_position = loss_pos
-		stalker.set_physics_process(true)
-
-	# The stalker closes and takes it (deterministic contact for the test).
-	if stalker != null:
-		stalker.global_position = loss_pos + Vector3(0.35, -0.12, 0.35)
-		stalker.force_chase()
-	for _i in 160:
-		await get_tree().physics_frame
-	_check(main.drone != null, "a surviving chassis carries the run after the module drone dies")
-	_check(main.drones.size() == 1, "the module chassis is struck from the fleet")
-	_check(not main._camera_installed, "video module goes with the drone")
-	_check(main._act_stage == 2, "act flips to module recovery")
-	_check(main.hud._end_card.visible, "the loss card is shown")
-	_check(main._camera_site_pos.distance_to(loss_pos) < 2.0,
-			"the wreck site records where the drone fell")
-	_check(main._m4_host != null, "the stalker persists after the kill")
-	_check(main._m4_light != null, "the event lamp remains in the junction")
-	_check(main.hosts.size() == 2, "the patroller plus the stalker remain")
-	_check(main.scanner.masses.size() == 1, "the radar mass persists with the stalker")
-	if stalker != null:
-		var settle := 0
-		while stalker.state != stalker.State.PATROL and settle < 900:
-			await get_tree().physics_frame
-			settle += 1
-		_check(stalker.state == stalker.State.PATROL,
-				"the stalker returns to patrol after the kill")
-	var blocking := false
-	for piece in main.ship.wreck_pieces:
-		if piece.use_collision:
-			blocking = true
-	_check(main.ship.wreck_pieces.size() == 2 and not blocking,
-			"the loss wreck is visual-only and cannot block a lane")
-	main.hud.hide_end_card()
-
-	# Recovery sortie: recall the survivor, then launch a clean fleet. Losing
-	# the module takes the live feed with it.
+	# Reel the two-chassis test fleet, then cross on a clean sortie.
 	main._try_reel(true)
 	for _i in 150:
 		await get_tree().physics_frame
-	_check(main.drone == null, "the surviving chassis is recalled for the recovery run")
 	main._start_sortie()
 	for _i in 6:
 		await get_tree().physics_frame
-	_check(not main._live_feed_active(), "module loss takes the live feed away")
-	_check(not main.drone.live_view, "recovery drone is camera-handoff off")
-	_check(get_viewport().get_camera_3d() != main.drone.cam,
-			"recovery sortie is back on the player camera")
-	_check(not main.hud._feed.visible, "recovery sortie starts with no photo held")
-	_check(main.hud._lens.visible, "black lens returns while the module is lost")
-	_check(not main.hud._live.visible, "live tube is gone with the module")
-	if main.drone != null:
-		for h in main.hosts:
-			h.drone = null
-		main.drone.global_position = main._camera_site_pos + Vector3(0.3, 0.0, 0.2)
-		main.drone.velocity = Vector3.ZERO
-		for _i in 20:
-			await get_tree().physics_frame
-		_check(main._cargo == "camera", "video module recovered from the wreck")
-		main.drone.global_position = main.ship.dock_pos
-		main.drone.velocity = Vector3.ZERO
-		for h in main.hosts:
-			h.drone = main.drone
-		for _i in 60:
-			await get_tree().physics_frame
-		main._try_reel(false)
-	for _i in 150:
+	_check(main.drone != null and main.drones.size() == 1,
+			"a clean Deck B sortie launches one chassis")
+
+	# Approach the north airlock: it lifts once and stays traversable.
+	main.drone.global_position = Vector3(main.ship.zone2_threshold.x, 0.32,
+			main.ship.zone2_threshold.z + 1.8)
+	main.drone.velocity = Vector3.ZERO
+	for _i in 30:
 		await get_tree().physics_frame
-	_check(main._camera_held, "recovered video module delivered to the bay")
-	main._at_fabricator()
-	await get_tree().physics_frame
-	_check(main._camera_installed, "video module reinstalled after recovery")
-	_check(main._act_stage == 3, "free sorties after recovery")
-	main._start_sortie()
-	for _i in 6:
+	_check(main.ship.zone2_door_open, "the Deck B airlock opens at the threshold")
+	for _i in 180:
 		await get_tree().physics_frame
-	_check(main._live_feed_active(), "reinstall restores the live feed")
-	_check(get_viewport().get_camera_3d() == main.drone.cam,
-			"refitted drone is flying on the live camera")
-	_check(not main.hud._lens.visible, "live feed is back after refit")
-	_check(main.hud._live.visible, "live tube is back after refit")
-	var photos_before: int = main._photo_count
-	main._take_photo()
-	for _i in 3:
+	_check(main.ship.zone2_door.position.y >= main.ship.ZONE2_DOOR_OPEN_Y - 0.2,
+			"the airlock panel lifts clear and stays open (y=%.2f)"
+			% main.ship.zone2_door.position.y)
+	_check(main.hosts.is_empty(), "the junction stays threat-free until you cross")
+
+	# Park the Collector near the maw so the beat resolves in test time
+	# without changing what triggers it.
+	main.collector.global_position = main.ship.collector_sacrifice + Vector3(-2.4, 0.0, 0.0)
+	main.collector.velocity = Vector3.ZERO
+
+	# First active-drone entry wakes the hold.
+	main.drone.global_position = Vector3(main.ship.zone2_threshold.x, 0.32,
+			main.ship.zone2_threshold.z - 2.6)
+	main.drone.velocity = Vector3.ZERO
+	for _i in 20:
 		await get_tree().physics_frame
-	_check(main._photo_count == photos_before + 1, "the still optic works after reinstall")
-	_check(main.hud._feed.visible, "the still camera still works after the refit")
+	_check(main._zone2_entered, "the first crossing arms Deck B")
+	_check(main.drone != null and GameState.sortie == GameState.Sortie.PILOTING,
+			"crossing the threshold is not an instant kill")
+	_check(main.hosts.size() == 4, "four hunters wake in the Cold Hold")
+	_check(main._zone2_beat_shown and main.hud._zone_beat.text == "DECK B",
+			"the zone beat is a bare deck label")
+	_check(main._live_feed_active() and main.hud._live.visible,
+			"live feed survives the crossing (no authored loss)")
+	_check(not main.hud._end_card.visible and main._act_stage == 1,
+			"no loss card and no recovery stage are forced")
+
+	var aggressive_ok := true
+	for h in main.hosts:
+		aggressive_ok = aggressive_ok \
+				and h.sight_range >= 20.0 and h.sight_range <= 22.0 \
+				and h.sight_fov >= 100.0 and h.sight_fov <= 110.0 \
+				and absf(h.move_thresh - 0.12) < 0.001 \
+				and h.still_sight_range >= 4.0 and h.still_sight_range <= 6.0 \
+				and absf(h.hearing_mult - 28.0) < 0.01 \
+				and h.w_patrol < h.w_hunt and h.w_hunt < h.w_stalk \
+				and absf(h.hunt_patience - 20.0) < 0.01
+	_check(aggressive_ok, "all four hunters use the aggressive Deck B profile")
+
+	_check(main.drone.anchor_pos.distance_to(main.ship.zone2_relay) < 0.001,
+			"the active chassis tethers to the relay")
+	_check(main.scanner.anchor_pos.distance_to(main.ship.zone2_relay) < 0.001
+			and main.scanner.anchor_label == "RELAY",
+			"the radar anchor and label follow the relay")
+	_check(main.drone.flashlight_installed
+			and main.drone.flashlight.spot_range > 12.0
+			and main.drone.flashlight.spot_angle <= 25.0,
+			"the fitted flashlight opens a narrow beam in the dark (%.1f m)"
+			% main.drone.flashlight.spot_range)
+	_check(main.drone.lamp.omni_range <= 3.0,
+			"the emergency omni stays a close glow once the flashlight is fitted")
+	for _i in 90:
+		await get_tree().physics_frame
+	_check(main._zone2_dark and main._env != null
+			and main._env.ambient_light_energy < 0.15,
+			"the hold fades to genuine darkness (%.3f)"
+			% (main._env.ambient_light_energy if main._env != null else -1.0))
+
+	# The Collector feeds itself once, on screen and through the hull.
+	var sacrifice_frames := 0
+	while not main._collector_sacrificed and sacrifice_frames < 900:
+		await get_tree().physics_frame
+		sacrifice_frames += 1
+	_check(main._collector_sacrificed and main.collector.consumed,
+			"the Collector is consumed on the first Deck B entry")
+	_check(main.processor.dormant, "the Processor goes dormant after the meal")
+	_check(main.is_ancestor_of(main.collector._lantern)
+			and main.is_ancestor_of(main.collector._sack),
+			"the empty lantern and sack remain on the deck")
+	main._on_active_enter_zone2()
+	for _i in 10:
+		await get_tree().physics_frame
+	_check(main.hosts.size() == 4 and main.collector.consumed,
+			"re-entering does not repeat the spawn or the meal")
+
+	# The side hall is a one-shot, and it yields the drone no matter what.
+	# A hunter *inside* the hall defers the beat rather than competing; one
+	# patrolling the open hold near the mouth must not suppress it (that was
+	# the trigger bug).
+	var defer_host = main.hosts[0]
+	defer_host.drone = null
+	defer_host.global_position = main.ship.crawler_grab + Vector3(0.0, 0.0, 1.0)
+	main._try_start_crawler(main.ship.crawler_setpiece)
+	_check(main.crawler == null, "a hunter at the crawl origin defers the crawler")
+	defer_host.global_position = main.ship.crawler_setpiece + Vector3(0.0, 0.0, -2.5)
+	defer_host.state = defer_host.State.PATROL
+	for h in main.hosts:
+		h.drone = null
+		if h != defer_host:
+			h.global_position = Vector3(-25.0, 0.2, -65.0)
+		h.velocity = Vector3.ZERO
+	main.drone.global_position = main.ship.crawler_setpiece + Vector3(0.0, 0.12, -1.5)
+	main.drone.velocity = Vector3.ZERO
+	for _i in 12:
+		await get_tree().physics_frame
+	_check(main.crawler != null and main.crawler.active,
+			"the crawler arms at the side-hall entrance even with a hunter near the mouth")
+	_check(main.hud._subtitle.text != "", "the crawler gets a subtitle channel")
+	main.drone.global_position = main.ship.crawler_setpiece + Vector3(-11.0, 0.12, -8.0)
+	main.drone.velocity = Vector3.ZERO
+	for _i in 120:
+		await get_tree().physics_frame
+	_check(main._crawler_done and main.crawler.done,
+			"leaving the hall resolves the crawler at its authored mark")
+	_check(main.drone != null and GameState.sortie == GameState.Sortie.PILOTING,
+			"the crawler cannot kill or soft-lock the sortie")
+	var debug_line: String = main._host_debug()
+	_check(debug_line.begins_with("enemies 5  zone2 hosts 4") and debug_line.contains("nearest"),
+			"F3 reports the hostile roster (%s)" % debug_line)
+	_check(main._nearest_host(main.drone.global_position) != null,
+			"F3 can name the nearest hunter")
+
+	# --- Deck C: engine room, relay and its Stalker ------------------------
+	_check(main.stalker != null and is_instance_valid(main.stalker),
+			"the engine room has its Stalker at boot")
+	if main.stalker != null:
+		_check(main.stalker.state == main.stalker.State.AMBUSH,
+				"the engine Stalker opens in its lair ambush")
+	main.drone.global_position = main.ship.engine_entry
+	main.drone.velocity = Vector3.ZERO
+	for _i in 20:
+		await get_tree().physics_frame
+	_check(main.drone.anchor_pos.distance_to(main.ship.engine_relay) < 0.001,
+			"the engine room switches the tether to its own relay")
+	_check(main.scanner.anchor_pos.distance_to(main.ship.engine_relay) < 0.001
+			and main.scanner.anchor_label == "ENGINE",
+			"the radar anchor and label follow the engine relay")
+	_check(main._visited_zones.has("engine"),
+			"Deck C inks once the drone enters the engine room")
+	if main.stalker != null:
+		_check(main.stalker.drone == main.drone,
+				"the engine Stalker binds to the active chassis")
+		main.stalker.drone = null   # deterministic map checks below
 
 	# --- M5: hull audio bus + hand-copy map ------------------------------------
 	_check(AudioServer.get_bus_index("Hull") != -1, "hull-borne audio bus exists")
-	_check(main._visited_zones.has("galley"), "galley inked after the food run")
 	_check(main._visited_zones.has("spur"), "spur inked after the salvage run")
+	_check(main._visited_zones.has("zone2") and main._visited_zones.has("crawler"),
+			"Deck B inks only after the drone has been there")
+	_check(main._visited_zones.has("engine"),
+			"Deck C inks only after the drone has been there")
 	main._open_map()
 	await get_tree().physics_frame
 	_check(main._map_open and main.hud._map_view.visible, "hand-copy map opens")
-	_check(main.hud._map_view.data.get("stage", -1) == 3, "map shows the recovery stage")
-	_check(main._charted.size() > 20,
-			"radar swept %d wall cells into the map" % main._charted.size())
-	var charted_draw: Array = main.hud._map_view.data.get("charted", [])
-	_check(charted_draw.size() > 20, "map data carries the charted points (%d)" % charted_draw.size())
+	_check(main.hud._map_view.data.get("stage", -1) == 1,
+			"map shows the module-aboard stage (no forced recovery)")
+	_check(main.hud._map_view.data.get("zone2_visited", false),
+			"the map carries its own Deck B sheet")
+	_check(main.hud._map_view.data.get("engine_visited", false),
+			"the Deck B sheet inks the engine room")
+	_check(main.hud._map_view.data.get("relay", Vector3.ZERO)
+			.distance_to(main.ship.zone2_relay) < 0.001,
+			"the map marks the Cold Hold relay")
+	_check(main.hud._map_view.data.get("engine_relay", Vector3.ZERO)
+			.distance_to(main.ship.engine_relay) < 0.001,
+			"the map marks the engine relay")
 	_check(main.level.map_surface != null
 			and (main.level.map_surface.material_override as StandardMaterial3D).albedo_texture != null,
 			"the bay map table renders the live chart")

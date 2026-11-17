@@ -1,4 +1,4 @@
-[gd_resource type="StandardMaterial3D" format=3]
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://4dcim382xex3"]
 
 [sub_resource type="Gradient" id="Gradient_xe8vw"]
 colors = PackedColorArray(0.85, 0.85, 0.85, 1, 1, 1, 1, 1)

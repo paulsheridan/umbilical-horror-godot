@@ -5,24 +5,25 @@ extends CanvasLayer
 
 signal start_clicked
 signal resume_clicked
+signal psx_open_requested
+signal psx_closed
 
 const MapView := preload("res://src/ui/map_view.gd")
+const PSXPanel := preload("res://src/ui/psx_panel.gd")
 
-# Feed-snow shader: mixes a live screen grab with CRT static. Amount 0 passes
-# the picture through; 1 is total signal loss.
+# Feed-snow shader: a window-local CRT static veil. Amount 0 is clear; 1 is
+# total signal loss. It never covers the radar window.
 const STATIC_SHADER_SRC := "
 shader_type canvas_item;
 uniform float amount : hint_range(0.0, 1.0) = 0.0;
-uniform sampler2D screen_tex : hint_screen_texture;
 float rnd(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void fragment() {
-	vec3 src = texture(screen_tex, SCREEN_UV).rgb;
 	vec2 g = UV * vec2(320.0, 180.0) + vec2(TIME * 61.0, TIME * 23.0);
 	float n = rnd(g);
 	float scan = 0.035 * sin(UV.y * 720.0);
 	float band = 0.05 * step(0.986, sin(UV.y * 3.0 + TIME * 2.0));
 	vec3 snow = vec3(n * 0.9 + scan + band);
-	COLOR = vec4(mix(src, snow, clamp(amount, 0.0, 1.0)), 1.0);
+	COLOR = vec4(clamp(snow, 0.0, 1.0), clamp(amount, 0.0, 1.0));
 }
 "
 
@@ -56,7 +57,7 @@ void fragment() {
 # scanlines. At rest it settles, but never gets clean.
 const LIVE_SHADER_SRC := "
 shader_type canvas_item;
-uniform sampler2D screen_tex : hint_screen_texture;
+uniform sampler2D feed;
 uniform float stress : hint_range(0.0, 1.0) = 0.0;
 uniform float turn : hint_range(-1.0, 1.0) = 0.0;
 uniform float dread : hint_range(0.0, 1.0) = 0.0;
@@ -100,7 +101,7 @@ void fragment() {
 		float w = 1.0 - fi * 0.16;
 		vec2 off = vec2(-tr * fi * (0.004 + s * 0.018),
 				fi * (s * 0.003 + d * 0.007));
-		col += texture(screen_tex, clamp(uv + off, vec2(0.0), vec2(1.0))).rgb * w;
+		col += texture(feed, clamp(uv + off, vec2(0.0), vec2(1.0))).rgb * w;
 		wsum += w;
 	}
 	col /= wsum;
@@ -116,7 +117,7 @@ void fragment() {
 	g = clamp((g - 0.008) / 0.42, 0.0, 1.0);
 	g = pow(g, 1.10);
 	float n = rnd(uv * vec2(340.0, 240.0) + vec2(t * 41.0, t * 19.0));
-	g += (n - 0.5) * (0.24 + s * 0.30 + d * 0.55);
+	g += (n - 0.5) * (0.30 + s * 0.32 + d * 0.55);
 	g += 0.025 * sin(UV.y * 720.0 + t * 2.0);
 	float drop = step(0.998 - s * 0.012 - d * 0.030,
 			rnd(vec2(floor(uv.y * 150.0), floor(t * 6.0))));
@@ -137,19 +138,31 @@ void fragment() {
 "
 
 var _root: Control
+var _desk: Control
+var _cam_window: PanelContainer
+var _cam_body: Control
+var _cam_title: Label
+var _cam_state: Label
+var _radar_window: PanelContainer
+var _radar_body: Control
+var _radar_state: Label
 var _vignette: TextureRect
 var _blind: TextureRect
 var _lens: ColorRect
-var _live_layer: CanvasLayer
 var _live: ColorRect
 var _live_mat: ShaderMaterial
 var _live_stress := 0.0
 var _live_turn := 0.0
 var _live_dread := 0.0
+var _cam_raw: TextureRect
 var _feed: ColorRect
 var _feed_mat: ShaderMaterial
 var _feed_enabled := false
 var _live_feed := false
+var _photo_showing := false
+## Debug vision hides the tube shader entirely, so the drone camera reads as
+## clean full-colour video. The flag is HUD-local; main owns the toggle.
+var _debug_view := false
 var _flash: ColorRect
 var _shutter: Control
 var _shutter_frac := 0.0
@@ -169,10 +182,18 @@ var _objective: Label
 var _objective_line: Label
 var _msg: Label
 var _prompt: Label
+## Subtitles are their own channel: quiet, bottom-centre, never the objective
+## banner or the interaction prompt.
+var _subtitle: Label
+var _zone_beat: Label
 var _title: ColorRect
 var _title_vbox: VBoxContainer
 var _pause: ColorRect
+var _psx_veil: ColorRect
+var _psx_panel: PanelContainer
 var _msg_tween: Tween
+var _subtitle_tween: Tween
+var _zone_tween: Tween
 var _blink_tween: Tween
 var _debug_label: Label
 var _debug_window := 0.0
@@ -188,6 +209,7 @@ func _ready() -> void:
 	add_child(_root)
 
 	_build_vignette()
+	_build_desk()
 	_build_blind_veil()
 	_build_lens()
 	_build_live()
@@ -202,6 +224,7 @@ func _ready() -> void:
 	_build_shutter()
 	_build_end_card()
 	_build_map()
+	_build_psx()
 
 
 # --------------------------------------------------------------------------
@@ -229,6 +252,123 @@ func _build_vignette() -> void:
 	_vignette.stretch_mode = TextureRect.STRETCH_SCALE
 	_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_vignette)
+
+
+## The pilot desktop: a flat work surface with two independent windows. The
+## optical channel is the big picture — stills and live video alike — and the
+## radar is a small instrument panel beside it. The radar is never covered by
+## the camera, a print, snow or an exposure flash.
+func _build_desk() -> void:
+	_desk = Control.new()
+	_desk.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_desk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_desk.visible = false
+	_desk.draw.connect(_draw_desk)
+	_root.add_child(_desk)
+
+	var cam := _build_window("OPTICS")
+	_cam_window = cam["panel"]
+	_cam_body = cam["body"]
+	_cam_title = cam["title"]
+	_cam_state = cam["state"]
+	_desk.add_child(_cam_window)
+
+	var radar := _build_window("RADAR")
+	_radar_window = radar["panel"]
+	_radar_body = radar["body"]
+	_radar_state = radar["state"]
+	_radar_state.text = "16 m"
+	_desk.add_child(_radar_window)
+	_layout_windows(false)
+
+
+func _build_window(title: String) -> Dictionary:
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.035, 0.041, 0.047, 0.98)
+	style.border_color = Color(0.28, 0.31, 0.34, 0.95)
+	style.set_border_width_all(1)
+	style.shadow_color = Color(0.0, 0.0, 0.0, 0.55)
+	style.shadow_size = 9
+	style.shadow_offset = Vector2(3, 4)
+	panel.add_theme_stylebox_override("panel", style)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 0)
+	panel.add_child(box)
+
+	var head := PanelContainer.new()
+	head.custom_minimum_size = Vector2(0, 24)
+	var hs := StyleBoxFlat.new()
+	hs.bg_color = Color(0.105, 0.118, 0.132, 1.0)
+	hs.border_color = Color(0.24, 0.27, 0.3, 1.0)
+	hs.border_width_bottom = 1
+	hs.content_margin_left = 8.0
+	hs.content_margin_right = 8.0
+	hs.content_margin_top = 2.0
+	hs.content_margin_bottom = 2.0
+	head.add_theme_stylebox_override("panel", hs)
+	box.add_child(head)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	head.add_child(row)
+	var name_label := _label(11, Color(0.72, 0.76, 0.79))
+	name_label.text = title
+	row.add_child(name_label)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(spacer)
+	var state := _label(10, Color(0.54, 0.78, 0.58))
+	state.text = "STILL"
+	state.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(state)
+
+	var body := Control.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.clip_contents = true
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(body)
+	return {"panel": panel, "body": body, "title": name_label, "state": state}
+
+
+func _layout_windows(live: bool) -> void:
+	if _cam_window == null or _radar_window == null:
+		return
+	# The picture owns the desktop in both modes: stills and live video are read
+	# at 16:9, while the radar is a small square instrument panel on the right.
+	# Anchors are fractions of a 16:9 viewport, so the 0.71 picture keeps its
+	# aspect and the 0.19 radar panel keeps a square body at 1280x720.
+	_set_window_rect(_cam_window, 0.035, 0.10, 0.745, 0.81)
+	_set_window_rect(_radar_window, 0.775, 0.10, 0.965, 0.471)
+	_cam_state.text = "LIVE" if live else "STILL"
+
+
+func _set_window_rect(panel: Control, l: float, t: float, r: float, b: float) -> void:
+	panel.anchor_left = l
+	panel.anchor_top = t
+	panel.anchor_right = r
+	panel.anchor_bottom = b
+	panel.offset_left = 0.0
+	panel.offset_top = 0.0
+	panel.offset_right = 0.0
+	panel.offset_bottom = 0.0
+
+
+func _draw_desk() -> void:
+	var vs := _safe_size(_desk)
+	_desk.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.012, 0.015, 0.019))
+	for x in range(0, int(vs.x), 56):
+		_desk.draw_line(Vector2(x, 0), Vector2(x, vs.y),
+				Color(0.24, 0.28, 0.3, 0.045), 1.0)
+	for y in range(0, int(vs.y), 56):
+		_desk.draw_line(Vector2(0, y), Vector2(vs.x, y),
+				Color(0.24, 0.28, 0.3, 0.045), 1.0)
+	var bar := Rect2(0.0, vs.y - 112.0, vs.x, 112.0)
+	_desk.draw_rect(bar, Color(0.022, 0.027, 0.032, 0.98))
+	_desk.draw_line(bar.position, Vector2(bar.end.x, bar.position.y),
+			Color(0.25, 0.29, 0.32, 0.55), 1.0)
 
 
 ## Blind-era veil. With no optics the drone has only a status lamp: a small
@@ -261,24 +401,21 @@ func _build_blind_veil() -> void:
 	_root.add_child(_blind)
 
 
-## The still-camera lens curtain. Until the video module is racked, the link
-## shows a dead black lens between exposures, with the last frame only while
-## the print is held. Once live video is online the curtain stays clear. This
-## must sit above the 3D world but below every HUD element, so it is built
-## before the labels and the photo itself.
+## The still-camera lens curtain inside the optics window. Until the video
+## module is racked, the window shows a dead black lens between exposures, with
+## the last frame only while the print is held.
 func _build_lens() -> void:
 	_lens = ColorRect.new()
 	_lens.color = Color(0.006, 0.008, 0.009, 1.0)
 	_lens.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_lens.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_lens.visible = false
-	_root.add_child(_lens)
+	_cam_body.add_child(_lens)
 
 
-## The live tube sits on its own CanvasLayer BELOW the HUD (layer 4 vs 5).
-## Screen-texture shaders render in a separate pass above same-layer siblings,
-## so this is the only reliable way to keep the radar and labels on top. It is
-## still above the 3D world, and the still print (HUD layer) covers it.
+## The live tube is local to the optics window: its shader samples the drone
+## feed texture directly instead of the screen, so the radar window is never
+## filtered, torn or covered by it.
 func _build_live() -> void:
 	var shader := Shader.new()
 	shader.code = LIVE_SHADER_SRC
@@ -286,15 +423,19 @@ func _build_live() -> void:
 	_live_mat.shader = shader
 	_live_mat.set_shader_parameter("stress", 0.0)
 	_live_mat.set_shader_parameter("turn", 0.0)
-	_live_layer = CanvasLayer.new()
-	_live_layer.layer = 4
-	add_child(_live_layer)
+	_cam_raw = TextureRect.new()
+	_cam_raw.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_cam_raw.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_cam_raw.stretch_mode = TextureRect.STRETCH_SCALE
+	_cam_raw.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cam_raw.visible = false
+	_cam_body.add_child(_cam_raw)
 	_live = ColorRect.new()
 	_live.material = _live_mat
 	_live.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_live.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_live.visible = false
-	_live_layer.add_child(_live)
+	_cam_body.add_child(_live)
 
 
 func _build_crosshair() -> void:
@@ -348,6 +489,27 @@ func _build_labels() -> void:
 	_msg.modulate.a = 0.0
 	_root.add_child(_msg)
 
+	_subtitle = _label(16, Color(0.86, 0.82, 0.70))
+	_subtitle.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_subtitle.anchor_left = 0.5
+	_subtitle.anchor_right = 0.5
+	_subtitle.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_subtitle.position.y = -112
+	_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_subtitle.modulate.a = 0.0
+	_root.add_child(_subtitle)
+
+	# Zone stencil: a deck marking, not a mission popup. It fades fast.
+	_zone_beat = _label(22, Color(0.58, 0.72, 0.66))
+	_zone_beat.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_zone_beat.anchor_left = 0.5
+	_zone_beat.anchor_right = 0.5
+	_zone_beat.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_zone_beat.position.y = 168
+	_zone_beat.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_zone_beat.modulate.a = 0.0
+	_root.add_child(_zone_beat)
+
 
 func _build_title() -> void:
 	_title = ColorRect.new()
@@ -379,7 +541,7 @@ func _build_title() -> void:
 	_title_vbox.add_child(blank)
 
 	var controls := _label(13, Color(0.42, 0.47, 0.52))
-	controls.text = "WASD move   .   SHIFT hurry   .   E inspect   .   ESC pause"
+	controls.text = "WASD   SHIFT   E   ESC"
 	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_vbox.add_child(controls)
 
@@ -388,6 +550,12 @@ func _build_title() -> void:
 	note.visible = false
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_vbox.add_child(note)
+
+	var psx := Button.new()
+	psx.text = "PSX LOOK  [F5]"
+	psx.focus_mode = Control.FOCUS_NONE
+	psx.pressed.connect(func() -> void: psx_open_requested.emit())
+	_title_vbox.add_child(psx)
 
 	var hint := _label(16, Color(0.5, 0.55, 0.4))
 	hint.text = "CLICK TO BEGIN"
@@ -411,20 +579,44 @@ func _build_pause() -> void:
 	_pause.visible = false
 	_root.add_child(_pause)
 
+	# Clicking the dark background resumes; clicking the panel does not.
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pause.add_child(center)
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.045, 0.05, 0.055, 0.96)
+	style.border_color = Color(0.36, 0.28, 0.2)
+	style.set_border_width_all(1)
+	style.set_content_margin_all(26)
+	panel.add_theme_stylebox_override("panel", style)
+	center.add_child(panel)
 	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_CENTER)
-	box.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	box.grow_vertical = Control.GROW_DIRECTION_BOTH
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	_pause.add_child(box)
+	box.add_theme_constant_override("separation", 12)
+	box.custom_minimum_size.x = 300
+	panel.add_child(box)
 
 	var p := _label(32, Color(0.7, 0.72, 0.75))
 	p.text = "PAUSED"
 	p.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(p)
 
+	var resume := Button.new()
+	resume.text = "RESUME"
+	resume.focus_mode = Control.FOCUS_NONE
+	resume.pressed.connect(func() -> void: resume_clicked.emit())
+	box.add_child(resume)
+
+	var psx := Button.new()
+	psx.text = "PSX LOOK"
+	psx.focus_mode = Control.FOCUS_NONE
+	psx.pressed.connect(func() -> void: psx_open_requested.emit())
+	box.add_child(psx)
+
 	var p2 := _label(13, Color(0.42, 0.47, 0.52))
-	p2.text = "ESC or click to resume"
+	p2.text = "ESC / CLICK"
 	p2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(p2)
 
@@ -433,6 +625,47 @@ func _build_pause() -> void:
 			_root.accept_event()
 			resume_clicked.emit()
 	)
+
+
+## Crisp PSX options overlay. It sits above every other HUD layer and outside
+## the PSX SubViewport, so the panel itself is never low-resolution.
+func _build_psx() -> void:
+	_psx_veil = ColorRect.new()
+	_psx_veil.color = Color(0.004, 0.005, 0.007, 0.82)
+	_psx_veil.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_psx_veil.visible = false
+	_psx_veil.mouse_filter = Control.MOUSE_FILTER_STOP
+	_root.add_child(_psx_veil)
+	_psx_veil.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventMouseButton and e.pressed:
+			_root.accept_event()
+			close_psx_panel()
+	)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_psx_veil.add_child(center)
+	_psx_panel = PSXPanel.new()
+	_psx_panel.custom_minimum_size = Vector2(660, 680)
+	center.add_child(_psx_panel)
+	_psx_panel.closed.connect(close_psx_panel)
+
+
+func open_psx_panel() -> void:
+	_psx_veil.visible = true
+	_psx_panel.visible = true
+
+
+func close_psx_panel() -> void:
+	if not _psx_veil.visible:
+		return
+	_psx_veil.visible = false
+	psx_closed.emit()
+
+
+func psx_panel_open() -> bool:
+	return _psx_veil != null and _psx_veil.visible
 
 
 func _build_debug() -> void:
@@ -460,7 +693,7 @@ func _build_pilot() -> void:
 	_pilot_hint = _label(12, Color(0.4, 0.62, 0.48))
 	_pilot_hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_pilot_hint.position = Vector2(18, -28)
-	_pilot_hint.text = "LMB / F photograph (slow recharge)   W/S drive   A/D turn   SHIFT hurry   R reel   B deploy   Q swap   E stand up"
+	_pilot_hint.text = "F PHOTO   L LIGHT   WASD DRIVE   SHIFT HURRY   R REEL   B DEPLOY   Q SWAP   E EXIT"
 	_pilot_hint.size = Vector2(1040, 20)
 	_root.add_child(_pilot_hint)
 	_pilot_status.visible = false
@@ -489,28 +722,36 @@ func _build_feed() -> void:
 	_feed.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_feed.visible = false
-	_root.add_child(_feed)
+	_cam_body.add_child(_feed)
 
-	# The shutter flash sits above the photo.
+	# The shutter flash sits above the photo, inside the optics window.
 	_flash = ColorRect.new()
 	_flash.color = Color(0.95, 0.96, 1.0, 0.0)
 	_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(_flash)
+	_cam_body.add_child(_flash)
 
 
-## Points the feed shader at the sortie SubViewport's texture.
+## Points both optical shaders and the raw debug view at the sortie viewport.
 func set_feed_source(vp: SubViewport) -> void:
-	if _feed_mat != null and vp != null:
-		_feed_mat.set_shader_parameter("feed", vp.get_texture())
+	if vp == null:
+		return
+	var tex := vp.get_texture()
+	if _feed_mat != null:
+		_feed_mat.set_shader_parameter("feed", tex)
+	if _live_mat != null:
+		_live_mat.set_shader_parameter("feed", tex)
+	if _cam_raw != null:
+		_cam_raw.texture = tex
 
 
-## A mirror-slap flash, then the still frame holds for its moment. The drone
-## keeps flying while the photo is on screen: you just stopped looking.
+## A mirror-slap flash, then the still frame holds in the optics window. The
+## radar window is untouched and keeps charting while the print is up.
 func show_photo() -> void:
 	if _feed == null or not _feed_enabled:
 		return
-	_feed.visible = true
+	_photo_showing = true
+	_sync_optics()
 	if _flash != null:
 		_flash.color = Color(0.95, 0.96, 1.0, 0.45)
 		var tw := create_tween()
@@ -518,12 +759,12 @@ func show_photo() -> void:
 
 
 func hide_photo() -> void:
-	if _feed != null:
-		_feed.visible = false
+	_photo_showing = false
+	_sync_optics()
 
 
-## One hard red-white hit when the stalker lunges. The static overlay and the
-## stinger do most of the work; this just slams the frame.
+## One hard red-white hit when the stalker lunges. Window-local now, so the
+## radar remains readable.
 func jumpscare() -> void:
 	if _flash != null:
 		_flash.color = Color(0.95, 0.10, 0.06, 0.60)
@@ -531,53 +772,48 @@ func jumpscare() -> void:
 		tw.tween_property(_flash, "color:a", 0.0, 0.38)
 
 
-## Whether fitted optics exist at all (blind-era drones have no feed rect).
+## Whether the still camera is available. The still camera is standard kit, so
+## this is normally always true; the switch remains for module-loss teardown.
 func set_feed_enabled(on: bool) -> void:
 	_feed_enabled = on
-	if _feed != null and not on:
-		_feed.visible = false   # don't leave a dead module's frame on screen
-	if _live != null and not on:
-		_live.visible = false
-	if _shutter != null:
-		set_shutter_visible(on and _pilot_status.visible)
-	# Before the video module: the lens goes black except while a photo holds.
-	# With live video, the drone camera is the viewport and the lens stays clear.
-	if _lens != null:
-		_lens.visible = on and _pilot_status.visible and not _live_feed
-	if _blind != null:
-		_blind.visible = (not on) and _pilot_status.visible
+	if not on:
+		_photo_showing = false
+	_sync_optics()
 
 
-## The recovered video module swaps the black still-camera lens for the live
-## drone camera, filtered through the tube shader. The radar stays as a compact
-## inset so it keeps charting over the picture.
+## Debug vision keeps the live channel but drops the tube shader, showing the
+## raw colour render inside the optics window only.
+func set_debug_view(on: bool) -> void:
+	_debug_view = on
+	_sync_optics()
+
+
+## The recovered video module fills the large optics window with the live drone
+## feed. The radar keeps its own small instrument window alongside it.
 func set_live_feed(on: bool) -> void:
 	_live_feed = on
-	if _feed != null and on:
-		_feed.visible = false   # a held print must not pin the live view
-	if _live != null:
-		_live.visible = on and _pilot_status.visible
-	if _lens != null:
-		_lens.visible = _pilot_status.visible and _feed_enabled and not on
-	if _scanner != null:
-		if on:
-			_scanner.anchor_left = 0.72
-			_scanner.anchor_right = 0.98
-			_scanner.anchor_top = 0.05
-			_scanner.anchor_bottom = 0.34
-		else:
-			_scanner.anchor_left = 0.18
-			_scanner.anchor_right = 0.98
-			_scanner.anchor_top = 0.05
-			_scanner.anchor_bottom = 0.90
-	if _pilot_hint != null:
-		if on:
-			_pilot_hint.text = "LIVE FEED   F photograph   W/S drive   A/D turn   SHIFT hurry   R reel   B deploy   Q swap   E stand up"
-		else:
-			_pilot_hint.text = "LMB / F photograph (slow recharge)   W/S drive   A/D turn   SHIFT hurry   R reel   B deploy   Q swap   E stand up"
+	_layout_windows(on)
 	if not on:
 		set_live_stress(0.0, 0.0)
 		set_live_dread(0.0)
+	_sync_optics()
+
+
+## One place that decides what the optics window is showing. The radar window
+## and its scanner are deliberately outside this function.
+func _sync_optics() -> void:
+	if _cam_raw != null:
+		_cam_raw.visible = _pilot_status.visible and _live_feed and _debug_view
+	if _live != null:
+		_live.visible = _pilot_status.visible and _live_feed and not _debug_view
+	if _lens != null:
+		_lens.visible = _pilot_status.visible and not _live_feed
+	if _feed != null:
+		_feed.visible = _pilot_status.visible and _feed_enabled and _photo_showing
+	if _shutter != null:
+		_shutter.visible = _pilot_status.visible and _feed_enabled
+	if _blind != null:
+		_blind.visible = false
 
 
 ## Drive load on the live tube: 0 is parked, 1 is full hurry. Turn is signed
@@ -609,7 +845,7 @@ func _build_static() -> void:
 	_static.material = _static_mat
 	_static.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_static.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(_static)
+	_cam_body.add_child(_static)
 
 
 ## Shutter recharge bar, left edge. Fills from empty after a shot; a green
@@ -617,12 +853,12 @@ func _build_static() -> void:
 func _build_shutter() -> void:
 	_shutter = Control.new()
 	_shutter.set_anchors_preset(Control.PRESET_CENTER_LEFT)
-	_shutter.position = Vector2(18, -110)
-	_shutter.size = Vector2(14, 220)
+	_shutter.position = Vector2(10, -88)
+	_shutter.size = Vector2(12, 176)
 	_shutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_shutter.draw.connect(_draw_shutter)
 	_shutter.visible = false
-	_root.add_child(_shutter)
+	_cam_body.add_child(_shutter)
 
 
 func _draw_shutter() -> void:
@@ -636,8 +872,6 @@ func _draw_shutter() -> void:
 	_shutter.draw_rect(Rect2(0, 0, w, h), Color(0.5, 0.55, 0.5, 0.5), false, 1.0)
 	if f >= 0.999:
 		_shutter.draw_circle(Vector2(w * 0.5, -8.0), 3.0, Color(0.55, 0.85, 0.6, 0.95))
-	_shutter.draw_string(ThemeDB.fallback_font, Vector2(10, 10), "MB1",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.7, 0.8, 0.7, 0.7))
 
 
 func set_shutter(frac: float) -> void:
@@ -651,20 +885,14 @@ func set_shutter_visible(on: bool) -> void:
 		_shutter.visible = on
 
 
-## Host the drone scanner (built by Main, which owns the drone reference).
-## In the first drone iteration the radar is the primary display, so it takes
-## most of the screen. It is re-parented just above the black lens: above the
-## world, below every text overlay and the still photo.
+## Host the drone scanner inside its own window. Main owns the drone
+## reference; the HUD owns the frame around it.
 func add_scanner(s: Control) -> void:
 	_scanner = s
-	s.anchor_left = 0.18
-	s.anchor_right = 0.98
-	s.anchor_top = 0.05
-	s.anchor_bottom = 0.90
-	s.visible = false
-	_root.add_child(s)
-	if _lens != null:
-		_root.move_child(s, _lens.get_index() + 1)
+	if _radar_body != null:
+		s.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		s.visible = false
+		_radar_body.add_child(s)
 
 
 func set_piloting(on: bool) -> void:
@@ -676,15 +904,13 @@ func set_piloting(on: bool) -> void:
 		_crosshair.visible = not on   # the radar carries its own heading marker
 	if _scanner != null:
 		_scanner.visible = on
-	if _live != null:
-		_live.visible = on and _live_feed
-	if _feed != null and not on:
-		_feed.visible = false
-	if _lens != null:
-		_lens.visible = on and _feed_enabled and not _live_feed
-	if _blind != null:
-		_blind.visible = on and not _feed_enabled
-	set_shutter_visible(on and _feed_enabled)
+	if _desk != null:
+		_desk.visible = on
+	if not on:
+		_photo_showing = false
+	if on:
+		_layout_windows(_live_feed)
+	_sync_optics()
 
 
 ## One quiet line for the whole fleet: "BOT 1 > 84% | BOT 2 96% [Q] SWAP".
@@ -703,14 +929,14 @@ func set_drone_status(tether_m: float, max_m: float, bars: int, battery: float) 
 	for i in 5:
 		sig += "|" if i < bars else "."
 	var strain := (tether_m > max_m - 0.4)
-	var optic := "   LIVE FEED" if _live_feed else "   STILL CAM"
+	var optic := "   DEBUG" if _debug_view else ("   LIVE" if _live_feed else "   STILL")
 	_pilot_status.text = "TETHER %4.1f / %2.0f m %s   SIGNAL %s   CHARGE %3.0f%%%s" % [
-		tether_m, max_m, "STRAIN!" if strain else "     ", sig, battery, optic,
+		tether_m, max_m, "STRAIN" if strain else "      ", sig, battery, optic,
 	]
 
 
 # --------------------------------------------------------------------------
-# M4 loss card + M5 annotated map
+# Module-loss card + M5 annotated map
 # --------------------------------------------------------------------------
 
 func _build_end_card() -> void:
@@ -842,7 +1068,53 @@ func show_message(text: String, dur: float = 3.4) -> void:
 	_msg_tween.tween_property(_msg, "modulate:a", 0.0, 0.6)
 
 
+## The subtitle channel. Slower and quieter than show_message(); used for
+## voices the player is overhearing rather than instructions.
+func show_subtitle(text: String, dur: float = 3.0) -> void:
+	_subtitle.text = text
+	if _subtitle_tween != null and _subtitle_tween.is_valid():
+		_subtitle_tween.kill()
+	_subtitle.modulate.a = 0.0
+	_subtitle_tween = create_tween()
+	_subtitle_tween.tween_property(_subtitle, "modulate:a", 0.92, 0.18)
+	_subtitle_tween.tween_interval(dur)
+	_subtitle_tween.tween_property(_subtitle, "modulate:a", 0.0, 0.55)
+
+
+## Deck stencil / entry beat. Two short lines, then gone.
+func show_zone_beat(title: String, subtitle: String) -> void:
+	_zone_beat.text = title if subtitle == "" else "%s\n%s" % [title, subtitle]
+	if _zone_tween != null and _zone_tween.is_valid():
+		_zone_tween.kill()
+	_zone_beat.modulate.a = 0.0
+	_zone_tween = create_tween()
+	_zone_tween.tween_property(_zone_beat, "modulate:a", 0.85, 0.5)
+	_zone_tween.tween_interval(1.8)
+	_zone_tween.tween_property(_zone_beat, "modulate:a", 0.0, 1.0)
+
+
+## A single white exposure hit, for the still camera catching something that
+## is no longer there. Harmless if a higher-priority flash is already running.
+func exposure_flash(strength: float = 0.35) -> void:
+	if _flash == null:
+		return
+	_flash.color = Color(0.92, 0.94, 1.0, strength)
+	var tw := create_tween()
+	tw.tween_property(_flash, "color:a", 0.0, 0.30)
+
+
+func _ignore_mouse(node: Node) -> void:
+	if node is Control:
+		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in node.get_children():
+		_ignore_mouse(child)
+
+
 func begin_game() -> void:
+	# Let mouse look through as soon as play starts; the veil is only fading.
+	# The whole title subtree, not just its ColorRect, would otherwise swallow
+	# motion for the length of the fade.
+	_ignore_mouse(_title)
 	var tw := create_tween()
 	tw.tween_property(_title, "modulate:a", 0.0, 1.1)
 	tw.tween_callback(func() -> void:

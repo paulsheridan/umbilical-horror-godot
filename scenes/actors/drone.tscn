@@ -10,6 +10,7 @@
 size = Vector3(0.72, 0.5, 0.95)
 
 [node name="Drone" type="CharacterBody3D" unique_id=2126085494]
+transform = Transform3D(0.6667, 0, 0, 0, 0.6667, 0, 0, 0, 0.6667, 0, 0, 0)
 script = ExtResource("1_iq8og")
 
 [node name="Collision" type="CollisionShape3D" parent="." unique_id=293781044]
@@ -47,7 +48,7 @@ size = Vector3(0.09, 0.03, 0.09)
 material = ExtResource("5_cabyk")
 
 [node name="Head" type="Node3D" parent="." unique_id=1310720417]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.92, 0.05)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.32, 0.05)
 
 [node name="Cam" type="Camera3D" parent="Head" unique_id=1495925314]
 fov = 80.0
@@ -61,3 +62,29 @@ light_volumetric_fog_energy = 0.0
 shadow_enabled = true
 omni_range = 3.4
 omni_attenuation = 2.2
+
+[node name="Flashlight" type="Node3D" parent="." unique_id=1807388031]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, -0.42)
+visible = false
+
+[node name="Body" type="CSGBox3D" parent="Flashlight" unique_id=1807388032]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.03)
+size = Vector3(0.14, 0.1, 0.26)
+material = ExtResource("2_dnkg8")
+
+[node name="Lens" type="CSGCylinder3D" parent="Flashlight" unique_id=1807388033]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, -0.11)
+radius = 0.045
+height = 0.02
+material = ExtResource("5_cabyk")
+
+[node name="Beam" type="SpotLight3D" parent="Flashlight" unique_id=1807388034]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.13)
+light_color = Color(1, 0.94, 0.82, 1)
+light_energy = 3.2
+light_volumetric_fog_energy = 1.0
+shadow_enabled = true
+shadow_bias = 0.03
+spot_range = 18.0
+spot_angle = 15.0
+spot_angle_attenuation = 1.25

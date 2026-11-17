@@ -24,9 +24,12 @@ A vertical slice covering the **Act 1 authored beat**, end to end:
    inset. Lose the module and the feed goes with it — back to stills until you
    recover and refit it. The ship looks different in fragments, then all at
    once.
-4. **The loss** — the first sortie carrying the video module ends with the
-   drone destroyed by a host. End of slice. The wreck (and the module) stay
-   where they fell; the recovery attempt is the emotional payoff.
+4. **Deck B** — the first sortie carrying the video module can cross the
+   junction's north airlock into the Cold Hold. The crossing wakes four
+   aggressive hunters, feeds the Collector to the Processor (one-shot), and
+   arms the crawler in the side hall. There is no authored loss: the module is
+   only lost if a hunter actually catches a chassis, and the wreck/recovery
+   systems stay live for that real loss.
 
 **Out of scope for v1** (explicit cuts):
 - Fabrication/crafting depth (the fabricator exists, but only racks the video
@@ -43,10 +46,12 @@ A vertical slice covering the **Act 1 authored beat**, end to end:
   exposure gap and the slow shutter recharge. The still reads as a photograph,
   not a stuttering video feed.
 - After the salvage, the live feed feels like a hard-won upgrade — not a
-  different game — and losing it in the authored interception hurts because
-  you remember what it was like to see.
-- Losing the video module at the end of the beat hurts **and** makes the player
-  want to go back out immediately, without believing they have gone blind.
+  different game — and the Cold Hold makes losing it to a real catch hurt
+  because you remember what it was like to see.
+- The first Cold Hold crossing spawns its hunters without an instant threshold
+  kill, the Collector is visibly consumed exactly once, and the hold reads as
+  genuinely dark and escapable. No scripted loss: if the player loses the
+  module, it is because a hunter earned it.
 - Playtesters, unprompted, describe the map and radar as "the ship" — not UI.
 
 If any of those fail, we retune *this slice* before building anything else.
@@ -139,31 +144,35 @@ M1 onward; every episode alternates which one "you" are.
     The still camera stays available even after live video is online.
 - **The video module (salvage, live feed):** the wrecked drone in the east spur
   carries a video camera module. Recovered and racked at the fabricator, its
-  decoder wakes and the next sortie flies on the live drone camera; the radar
-  shrinks to an inset. `main._live_feed_active()` gates the handoff on
-  `VIDEO_FEED_ENABLED and _camera_installed`, so losing the module in the
-  authored interception (or to any later loss) puts the drones back on stills
-  until it is recovered and refitted.
+  decoder wakes and the next sortie flies on the live drone camera. The optics
+  window is the large picture in both modes; the radar is a small instrument
+  panel beside it. The live tube is near-sighted (far-focus blur), so stills
+  remain the way to read distance. `main._live_feed_active()` gates the handoff on
+  `VIDEO_FEED_ENABLED and _camera_installed`, so losing the module to a real
+  catch puts the drones back on stills until it is recovered and refitted.
+  There is no forced interception.
   - The live picture runs through `LIVE_SHADER_SRC`: the still print's hard
-    toe/shoulder curve, quantised to 480×270, with animated grain, scanlines,
-    horizontal tearing, ghosting and block corruption. `hud.set_live_stress()`
+    toe/shoulder curve, quantised to 480×270, with animated grain (a little
+    heavier than the print), scanlines, horizontal tearing, ghosting and block
+    corruption. `hud.set_live_stress()`
     feeds it drive speed and signed steering every frame; parked is grainy but
     stable, turning drags the ghost sideways, speed adds noise and roll.
   - The tube lives on its own `CanvasLayer` (layer 4) below the HUD: screen-
     texture shaders render in a separate pass, so this is what keeps the radar
     inset and labels above the picture.
-  - Proximity poison: `main` computes `dread` from drone-to-stalker distance
-    (zero at 9 m, rising steeply inside it) and calls `hud.set_live_dread()`.
+  - Proximity poison: `main` computes `dread` from drone-to-nearest-hold-hunter
+    distance (zero at 9 m, rising steeply inside it) and calls
+    `hud.set_live_dread()`.
     The shader adds tears, ghosting, a rolling white band and a final wash
     toward snow, so the stalker stays unseen as it closes.
 - **Signal integrity:** feed squelch/static scales with distance from the fab
   bay antenna + hull damage. At zero integrity: static-only. This replaces any
   "you can see the whole ship" cheat.
 
-### Movement scanner (primary display, M2)
-- 2D CRT-styled control shown large at the pilot station while piloting — it
-  takes most of the screen until the video module is fitted, then shrinks to a
-  compact top-right inset so it keeps charting beside the live feed.
+### Movement scanner (instrument panel, M2)
+- 2D CRT-styled control in its own small window at the pilot station. The
+  large optics window is the picture; the radar sits beside it and keeps
+  charting whether that window is holding a still or running live video.
 - Sweep-line radar, north-up and world-anchored: as the drone drives, the ship
   assembled from wall echoes stays put. Echoes decay (~20 s) and each return is
   charted permanently onto the map.
@@ -177,35 +186,38 @@ M1 onward; every episode alternates which one "you" are.
   the player's *annotations* are earned (objective markers added when sorties
   reveal them). No live player/drone dot beyond last-known scanner data.
 
-## Host AI (one body, one brain — M4)
+## Host AI (four bodies, one brain — M7)
 
-- `CharacterBody3D`; the current pass uses authored waypoint routes with a
-  stuck detector rather than a baked navigation mesh. The single junction
-  patroller's route runs the full east-annex donut and cuts through the
-  cafeteria. The route is kept legal for straight-line seek and proven by the
-  patrol soak. The galley is deliberately empty; two silhouettes in the
-  opening rooms made the game a waiting game rather than a scare.
+- `CharacterBody3D`; authored waypoint routes with a stuck detector rather than
+  a baked navigation mesh. The opening ship carries **no** hunter: the bay,
+  corridor, junction, galley and annex are threat-free. The four Cold Hold
+  hunters each own a separate rectangular loop (`main.ZONE2_ROUTES`) that stays
+  clear of the crawler side hall and the sparse cover. Straight-line seek is
+  kept legal and proven by the patrol soak.
 - States: **PATROL** (waypoints, slow), **CURIOUS** (one noise: stop, remember
   roughly where it was, listen — no approach), **HUNT** (a second noise: walk
   slowly toward an imprecise memory of the sound, pausing to listen), **STALK**
   (direct sight: follow at a distance and keep line of sight).
-- Perception: `NoiseBus` events plus a 10 m sight cone with a world raycast.
-  **Sight requires motion:** a drone that is not rolling is invisible at every
-  range — there is no close-range sight exception. Movement re-acquires it
-  instantly. A still drone can only be killed by contact if the host was
-  already on top of it. Hosts are source-tagged and deaf to each other.
+- Perception: `NoiseBus` events plus a 21 m, 105° sight cone with a world
+  raycast. **Sight requires motion:** a drone that is not rolling is invisible
+  beyond a 5 m nose-to-nose radius. Movement re-acquires it instantly. A still
+  drone can only be killed by contact if the hunter is already on top of it.
+  Hunters are source-tagged and deaf to each other.
 - Escapability rules: a single quiet noise only buys curiosity; freezing ends
   the encounter. Stopping (or breaking line of sight around a corner) makes a
   stalk decay into a short search of the last place the drone was seen moving,
-  then patrol. A loud event (≥ 0.7) skips the listening phase and starts a hunt
-  immediately.
-- The primary stalker is a separate **second hunting body** (`src/host/stalker.gd`).
-  `main` spawns it far away in the annex north ring once the drone enters the
-  junction, and it persists across sorties. Its AI states are **PATROL** (annex
-  route), **INVESTIGATE** (noise: head for the direction, not the exact point),
-  **SEARCH**, **CHASE** (any player drone in sight, immediately), **LURK**,
-  **LUNGE**, **AMBUSH_SETUP** and **AMBUSH**. It kills on contact. Low tables
-  are true cover: a drone inside a `hide_spots` footprint is invisible to sight
+  then patrol. A loud event (≥ 0.62) skips the listening phase and starts a hunt
+  immediately. Hunt patience is 20 s; the remembered point carries 0.5–1.4 m of
+  error.
+- The **Stalker** (`src/host/stalker.gd`, `scenes/actors/stalker.tscn`) is the
+  live tenant of the Deck C engine room. `main` spawns one at boot on the
+  machinery floor and it persists for the session. Its behaviour below is the
+  current engine-room threat.
+- Stalker design: **PATROL** (engine route), **INVESTIGATE**
+  (noise: head for the direction, not the exact point), **SEARCH**, **CHASE**
+  (any player drone in sight, immediately), **LURK**, **LUNGE**,
+  **AMBUSH_SETUP** and **AMBUSH**. It kills on contact. Low tables are true
+  cover for it: a drone inside a `hide_spots` footprint is invisible to sight
   (but still audible). Breaking sight makes it search in the direction it last
   saw. It reads on radar as a broad moving mass (`radar_mass` in `scanner`,
   `radar_blips = false`) and its voice is a single long sub-bass hum
@@ -348,23 +360,32 @@ while the print is held, in a scripted test only, to verify the effect lands
 *Done when:* the black lens between photographs makes you slow down, and the
 print reads as a photograph rather than a frozen video frame.
 
-**M4 — Authored beat (week 6–7).** The Act 1 sequence as data/script:
-1) radar food sortie (first host heard, not met),
+**M7 — Deck B / Cold Hold beat (week 6–7).** The Act 1 sequence as data/script:
+1) radar food sortie (the opening ship is threat-free; the first monster is
+   only heard, never met),
 2) east spur reveals the wrecked drone + intact **video module** (carry-back
    mechanic: drone inventory + drag weight),
 3) rack the module at the fabricator (short in-fiction sequence; the decoder
    wakes and the next sortie gets the live feed),
-4) first sortie carrying the video module; the primary stalker is held back
-   until the drone leaves the initial hallway and enters the junction,
-5) host contact — drone destroyed; link cut to black; end card. The wreck is
-   visual-only (never blocks a lane) and the module stays where it fell;
-   recovery is a real decision.
-Implement the full patrol / directional-investigate / immediate-chase /
-last-seen-direction search, low-table cover and the live-feed lurk/lunge. The
-stalker is a modelled skeletal horror and persists after the first spawn. No scripted cutscenes — everything emerges from systems plus a couple of
-gated triggers.
-*Done when:* a fresh playtester loses the video module and says some version of
-"wait, can I go back for it?"
+4) the junction's north airlock opens onto the umbilical and the Cold Hold,
+5) the first active-drone crossing wakes four aggressive hunters at authored
+   points 20+ m out, feeds the Collector to the Processor (one-shot), and arms
+   the crawler side-hall set piece,
+6) the relay takes over the tether and radar label; Deck B is pitch black and
+   its map sheet only inks once the drone has been there,
+7) the lit crawler side hall opens at its far end into **Deck C**, a tall
+   engine room around a central core. A second relay covers the room; its
+   low machinery pockets are drone-sized sight-hides, and a live Stalker waits
+   folded in a far corner with a long ambush patience.
+There is **no forced loss**. If a hunter catches a chassis, the established
+wreck/module-recovery systems carry it. Implement the aggressive profile
+(21 m/105° sight, 5 m still radius, 28× hearing, 1.4/2.0/2.6 m/s speeds, 20 s
+patience) and keep line-of-sight/search escapable. No scripted cutscenes —
+everything emerges from systems plus gated triggers.
+*Done when:* a fresh player crosses into a dark, open hold, sees the hunters
+wake without dying at the threshold, watches the Collector go once, follows the
+amber lights to the engine room, and wants to go back out rather than feeling
+the module was taken from them.
 
 **M5 — Audio + polish pass (week 8).** The real horror budget: hull-borne
 transmission (bus with heavy lowpass + distance muffle for all host sounds),

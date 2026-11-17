@@ -1,8 +1,7 @@
 extends Control
-## Movement scanner v1 — radar is the primary display until the video module
-## is recovered; afterwards it shrinks to an inset so the live feed owns the
-## screen. The sweep pings walls as decaying echo ghosts; NoiseBus events show
-## as blips.
+## Movement scanner v1 — a compact instrument panel beside the optics window.
+## The sweep pings walls as decaying echo ghosts and turns a faint hairline
+## across the tube; NoiseBus events show as blips.
 
 const RANGE := 16.0          # meters of echo reach
 const PX_PER_M := 7.0        # bigger, finer picture
@@ -17,6 +16,8 @@ signal echo_recorded(position: Vector3)
 
 var drone: Node3D = null
 var anchor_pos := Vector3.ZERO
+## "DOCK" in the ship; "RELAY" once the active chassis crosses into Deck B.
+var anchor_label := "DOCK"
 
 var echoes: Array = []       # {"pos": Vector3, "t": float}
 var blips: Array = []        # {"pos": Vector3, "t": float}
@@ -111,6 +112,11 @@ func _draw() -> void:
 	draw_line(Vector2(c.x, c.y - r), Vector2(c.x, c.y + r), Color(0.25, 0.7, 0.4, 0.12), 1.0)
 	draw_circle(c, 2.0, Color(0.25, 0.7, 0.4, 0.4))
 
+	# The sweep arm: one hairline at the beam angle. Faint enough to read as
+	# phosphor burn rather than an overlay, but it makes the scope feel live.
+	var beam := c + Vector2(sin(sweep), cos(sweep)) * r
+	draw_line(c, beam, Color(0.36, 0.95, 0.56, 0.13), 1.0)
+
 	if drone == null:
 		return
 	var dpos: Vector3 = drone.global_position
@@ -161,14 +167,14 @@ func _draw() -> void:
 	draw_line(c, c + fv, Color(0.9, 0.95, 0.9, 0.9), 2.6)
 	draw_circle(c, 4.0, Color(0.9, 0.95, 0.9, 0.9))
 
-	# Direction to the dock anchor: the homeward line when lost.
+	# Direction to the active anchor: the homeward line when lost.
 	var ad: Vector3 = anchor_pos - dpos
 	var av := Vector2(ad.x, ad.z)
 	if av.length() > 0.5:
 		var pt := c + av.normalized() * minf(av.length() * ppm, r - 16.0)
 		draw_line(c, pt, Color(0.85, 0.5, 0.2, 0.65), 1.6)
 		var font := ThemeDB.fallback_font
-		draw_string(font, pt + Vector2(4.0, -4.0), "DOCK",
+		draw_string(font, pt + Vector2(4.0, -4.0), anchor_label,
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
 				Color(0.85, 0.5, 0.2, 0.85))
 

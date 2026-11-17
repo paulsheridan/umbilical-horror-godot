@@ -1,7 +1,9 @@
-[gd_scene format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://src/host/host.gd" id="1_nfx1f"]
-[ext_resource type="Material" path="res://assets/materials/shadow.tres" id="2_j5sdj"]
+[ext_resource type="PackedScene" path="res://assets/characters/zombie/zombie_model.fbx" id="2_model"]
+[ext_resource type="Material" path="res://assets/characters/zombie/zombie_skin.tres" id="3_skin"]
+[ext_resource type="AnimationLibrary" path="res://assets/characters/zombie/zombie_anim_library.tres" id="4_anims"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_un8nk"]
 radius = 0.32
@@ -15,29 +17,21 @@ velocity = Vector3(0, -1.6000001, 0)
 floor_snap_length = 0.5
 script = ExtResource("1_nfx1f")
 
-[node name="@CollisionShape3D@2" type="CollisionShape3D" parent="." unique_id=1686753734]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1686753734]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
 shape = SubResource("CapsuleShape3D_un8nk")
 
 [node name="Meshes" type="Node3D" parent="." unique_id=2135313816]
 
-[node name="@CSGCylinder3D@4" type="CSGCylinder3D" parent="Meshes" unique_id=297862247]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, 0)
-radius = 0.3
-height = 1.2
-material = ExtResource("2_j5sdj")
+[node name="Model" parent="Meshes" instance=ExtResource("2_model")]
+transform = Transform3D(-0.58, 0, 0, 0, 0.58, 0, 0, 0, -0.58, 0, 0, 0)
 
-[node name="@CSGSphere3D@5" type="CSGSphere3D" parent="Meshes" unique_id=1672355699]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0.04)
-radius = 0.17
-material = ExtResource("2_j5sdj")
+[node name="characterLargeMale" parent="Meshes/Model/Root/Skeleton3D" index="0"]
+material_override = ExtResource("3_skin")
 
-[node name="@CSGBox3D@6" type="CSGBox3D" parent="Meshes" unique_id=241079252]
-transform = Transform3D(0.9950042, 0.09983342, 0, -0.09378079, 0.9346798, -0.3428978, -0.03423266, 0.34118474, 0.9393727, -0.32, 1.18, 0.06)
-size = Vector3(0.1, 0.72, 0.1)
-material = ExtResource("2_j5sdj")
-
-[node name="@CSGBox3D@7" type="CSGBox3D" parent="Meshes" unique_id=468896665]
-transform = Transform3D(0.9950042, -0.09983342, 0, 0.09378079, 0.9346798, -0.3428978, 0.03423266, 0.34118474, 0.9393727, 0.32, 1.18, 0.06)
-size = Vector3(0.1, 0.72, 0.1)
-material = ExtResource("2_j5sdj")
+[node name="AnimationPlayer" type="AnimationPlayer" parent="Meshes"]
+root_node = NodePath("../Model")
+libraries = {
+&"": ExtResource("4_anims")
+}
+playback_default_blend_time = 0.18

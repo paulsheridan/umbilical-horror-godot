@@ -39,6 +39,18 @@ const ROOMS := [
 	{"n": "PROCESSOR", "x0": 28.0, "x1": 33.0, "z0": -15.4, "z1": -8.0, "zone": "processor"},
 ]
 
+# Deck B is a separate sheet, not a stretch of Deck A. The Cold Hold's scale
+# and orientation differ enough that an inset reads better than a re-fit.
+const ZONE2_ROOMS := [
+	{"n": "UMBILICAL", "x0": -1.2, "x1": 1.2, "z0": -40.8, "z1": -32.8, "zone": "zone2"},
+	{"n": "COLD HOLD", "x0": -27.0, "x1": 23.0, "z0": -66.0, "z1": -40.8, "zone": "zone2"},
+	{"n": "SIDE HALL", "x0": 19.3, "x1": 22.7, "z0": -66.2, "z1": -47.0, "zone": "crawler"},
+	{"n": "ENGINE", "x0": 10.0, "x1": 34.0, "z0": -88.2, "z1": -66.2, "zone": "engine"},
+]
+const ZONE2_CENTER := Vector2(3.5, -64.5)
+const ZONE2_W := 61.0
+const ZONE2_H := 47.4
+
 var data: Dictionary = {}
 
 # Layout (recomputed by fit_to).
@@ -63,6 +75,61 @@ func _ink(a: float) -> Color:
 	return Color(0.80, 0.72, 0.55, a)
 
 
+func _draw_zone2(visited: Dictionary) -> void:
+	var panel_w := size.x * (0.40 if _big else 0.54)
+	var panel_h := size.y * (0.37 if _big else 0.48)
+	var panel := Rect2(size.x - panel_w - 16.0, size.y - panel_h - 16.0,
+			panel_w, panel_h)
+	draw_rect(panel, Color(0.085, 0.077, 0.062, 0.94))
+	draw_rect(panel, _ink(0.55), false, 1.2)
+	draw_string(ThemeDB.fallback_font, panel.position + Vector2(8, 15),
+			"DECK B", HORIZONTAL_ALIGNMENT_LEFT, -1,
+			12 if _big else 10, _ink(0.9))
+
+	var inner := Rect2(panel.position + Vector2(8, 22),
+			panel.size - Vector2(16, 30))
+	var zscale := minf(inner.size.x / ZONE2_W, inner.size.y / ZONE2_H)
+	var zcenter := inner.position + inner.size * 0.5 - ZONE2_CENTER * zscale
+
+	for room in ZONE2_ROOMS:
+		var r := Rect2(
+				Vector2(room["x0"] * zscale, room["z0"] * zscale) + zcenter,
+				Vector2((room["x1"] - room["x0"]) * zscale,
+						(room["z1"] - room["z0"]) * zscale))
+		var known: bool = visited.has(room["zone"])
+		if known:
+			draw_rect(r, _ink(0.55), false, 1.1 if _big else 1.0)
+			if _big and r.size.x > 42.0:
+				draw_string(ThemeDB.fallback_font,
+						r.position + Vector2(4, r.size.y * 0.5 + 3),
+						room["n"], HORIZONTAL_ALIGNMENT_LEFT, -1, 9, _ink(0.85))
+		else:
+			for i in range(0, int(r.size.x / 5.0)):
+				var x := r.position.x + i * 5.0
+				draw_line(Vector2(x, r.position.y), Vector2(x + 3, r.position.y + r.size.y),
+						_ink(0.12), 1.0)
+			draw_rect(r, _ink(0.15), false, 1.0)
+
+	# The relay: the tether's new home, and the only named place in the hold.
+	var relay: Vector3 = data.get("relay", Vector3(-2.0, 0.3, -40.4))
+	var rp := zcenter + Vector2(relay.x, relay.z) * zscale
+	draw_line(rp + Vector2(-4, 0), rp + Vector2(4, 0), _ink(0.95), 1.4)
+	draw_line(rp + Vector2(0, -4), rp + Vector2(0, 4), _ink(0.95), 1.4)
+	if _big:
+		draw_string(ThemeDB.fallback_font, rp + Vector2(6, 3), "RELAY",
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 10, _ink(0.95))
+
+	# The engine relay, only once the engine room has actually been entered.
+	if data.get("engine_visited", false):
+		var erelay: Vector3 = data.get("engine_relay", Vector3(21.0, 0.3, -66.2))
+		var ep := zcenter + Vector2(erelay.x, erelay.z) * zscale
+		draw_line(ep + Vector2(-4, 0), ep + Vector2(4, 0), _ink(0.95), 1.4)
+		draw_line(ep + Vector2(0, -4), ep + Vector2(0, 4), _ink(0.95), 1.4)
+		if _big:
+			draw_string(ThemeDB.fallback_font, ep + Vector2(6, 3), "ENGINE",
+					HORIZONTAL_ALIGNMENT_LEFT, -1, 10, _ink(0.95))
+
+
 func _draw() -> void:
 	# Paper (only when drawn onto the table; the overlay stays transparent).
 	if not _big:
@@ -74,7 +141,7 @@ func _draw() -> void:
 	var installed: bool = data.get("camera_installed", false)
 
 	if _big:
-		draw_string(ThemeDB.fallback_font, Vector2(30, 30), "DECK A — hand copy",
+		draw_string(ThemeDB.fallback_font, Vector2(30, 30), "DECK A",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 18, _ink(0.85))
 
 	for room in ROOMS:
@@ -106,12 +173,12 @@ func _draw() -> void:
 	draw_line(dp + Vector2(0, -8), dp + Vector2(0, 8),
 			Color(0.55, 0.85, 0.55, 0.95) if open else Color(0.85, 0.3, 0.22, 0.95), 2.0)
 
-	# Rations marker (the pantry was always on the map).
-	if data.get("rations_pending", false):
-		var fp := _p(Vector3(-12.6, 0, -31.0))
+	# Flashlight add-on marker (the cold-room shelf was always on the map).
+	if data.get("flashlight_pending", false):
+		var fp := _p(data.get("flashlight_pos", Vector3(-12.6, 0, -31.0)))
 		draw_rect(Rect2(fp - Vector2(3, 3), Vector2(6, 6)), _ink(0.95))
 		if _big:
-			draw_string(ThemeDB.fallback_font, fp + Vector2(7, 3), "RAT",
+			draw_string(ThemeDB.fallback_font, fp + Vector2(7, 3), "FL",
 					HORIZONTAL_ALIGNMENT_LEFT, -1, 12, _ink(0.95))
 
 	# Camera wreck site: once the module has somewhere to be recovered.
@@ -130,15 +197,18 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, dk + Vector2(7, 3), "DOCK",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 12, _ink(0.95))
 
+	# Deck B: a second hand-copy sheet, inked only after the umbilical has been
+	# crossed. It shares the same visited dictionary, so the room appears when
+	# the drone first sweeps Deck B's walls.
+	if visited.has("zone2") or visited.has("crawler"):
+		_draw_zone2(visited)
+
 	if _big:
 		draw_string(ThemeDB.fallback_font, Vector2(30, 60), "N ^",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 16, _ink(0.8))
 		draw_line(Vector2(30, 700), Vector2(30 + 5 * _scale, 700), _ink(0.8), 2.0)
 		draw_string(ThemeDB.fallback_font, Vector2(34, 690), "5 m",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 12, _ink(0.8))
-		draw_string(ThemeDB.fallback_font, Vector2(30, 665),
-				"compartments fill in where a drone has been; sweeps ink the walls",
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 12, _ink(0.5))
 	else:
 		draw_string(ThemeDB.fallback_font, Vector2(10, 16), "DECK A",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, _ink(0.85))

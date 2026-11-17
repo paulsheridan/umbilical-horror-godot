@@ -1,0 +1,28 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://src/host/vomit.gd" id="1_vomit"]
+[ext_resource type="Material" path="res://assets/materials/vomit.tres" id="2_vomit"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_glob"]
+radius = 0.13
+height = 0.26
+radial_segments = 8
+rings = 4
+
+[sub_resource type="SphereMesh" id="SphereMesh_droplet"]
+radius = 0.06
+height = 0.12
+radial_segments = 6
+rings = 3
+
+[node name="Vomit" type="Node3D"]
+script = ExtResource("1_vomit")
+
+[node name="Glob" type="MeshInstance3D" parent="."]
+mesh = SubResource("SphereMesh_glob")
+material_override = ExtResource("2_vomit")
+
+[node name="Droplet" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.07, 0.03)
+mesh = SubResource("SphereMesh_droplet")
+material_override = ExtResource("2_vomit")
