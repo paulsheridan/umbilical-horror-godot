@@ -44,8 +44,10 @@ scenes/
   actors/
     player.tscn                  # body, capsule, camera, eye fill
     drone.tscn                   # chassis, tracks, camera, status lamp
-    host.tscn                    # Cold Hold hunter body
-    stalker.tscn                 # skeletal rig, eyes, core (engine tenant)
+    host.tscn                    # attacking zombie body (tests/dev placement)
+    watcher.tscn                 # Cold Hold watcher body (plants, never attacks)
+    stalker.tscn                 # body + collision only; the centipede rig
+                                 # is runtime-built (engine tenant)
     collector.tscn               # animated scavenger (Kenney), lantern, sack
     vomit.tscn                   # stand-in Collector vomit projectile
     processor.tscn               # pinned maw, jaw, gaunt arms
@@ -163,7 +165,7 @@ All placement is editor-owned. The controller reads these on load:
 | `ProcessorDrop` | where the Collector sets a carried bot down |
 | `Zone2Threshold` | where Deck B begins and the first-entry beat fires |
 | `Zone2Relay` | the Cold Hold tether origin and radar label |
-| `Zone2Spawn0..3` | the four hunter spawn points (keep ≥ 12 m out) |
+| `Zone2Spawn0..3` | the four watcher spawn points (keep ≥ 12 m out) |
 | `CrawlerSetPiece` | the side-hall entrance / set-piece trigger |
 | `CrawlerGrab` | the crawl origin and its abandon mark |
 | `CollectorSacrifice` | where the Collector feeds itself to the maw |
@@ -194,7 +196,7 @@ runtime value.
 - The hold is one open room (`Zone2/ColdHold`) with an 8 m umbilical and an
   8.5 m ceiling. Keep it sparse: hard cover is the only cover and the room is
   deliberately pitch black while the active drone is inside.
-- The four hunter loops live in `main.ZONE2_ROUTES`. Every leg must stay out of
+- The four watcher loops live in `main.ZONE2_ROUTES`. Every leg must stay out of
   the crawler side hall (`x > 19.2, z < -47`) and clear of the cover blocks.
 - The crawler hall is the east-edge corridor (`CrawlerWestWall`,
   `CrawlerCeiling`, `CrawlerFloor`) plus the throat that opens north into

@@ -19,7 +19,7 @@ extends Node3D
 ##
 ## M7: the Cold Hold. Beyond the junction's north airlock, an eight-metre
 ## umbilical opens into a pitch-black 50 x 25 m hold. A relay inside keeps
-## every hold point inside the 36 m tether. The first entry wakes four hunters,
+## every hold point inside the 36 m tether. The first entry wakes four watchers,
 ## feeds the Collector to the Processor (one-shot), and arms the crawler
 ## set piece in the side hall.
 
@@ -32,6 +32,7 @@ const SCANNER := preload("res://src/ui/scanner.gd")
 const HUD := preload("res://src/ui/hud.gd")
 const MAP_VIEW := preload("res://src/ui/map_view.gd")
 const HOST_SCENE := preload("res://scenes/actors/host.tscn")
+const WATCHER_SCENE := preload("res://scenes/actors/watcher.tscn")
 const STALKER_SCENE := preload("res://scenes/actors/stalker.tscn")
 const COLLECTOR_SCENE := preload("res://scenes/actors/collector.tscn")
 const PROCESSOR_SCENE := preload("res://scenes/actors/processor.tscn")
@@ -50,6 +51,9 @@ const DRONE_FLEET := 2          # max chassis alive at once
 const DRONE_CRADLE_GAP := 1.5
 var _swap_cd := 0.0
 var _deploy_cd := 0.0
+## Cheap integer signature of everything the fleet line shows, so the string is
+## only rebuilt when the roster, link, cargo notes or a displayed charge move.
+var _fleet_sig := -1
 var hud: CanvasLayer
 var scanner: Control
 ## PSX world: every 3D node lives under PSXLook's SubViewport. HUD, map and
@@ -97,10 +101,9 @@ var _crawler_done := false
 ## Deck C: the engine-room Stalker. Spawned once at boot; it is the threat in
 ## the room beyond the crawler hall and persists for the session.
 var stalker = null
-var _stalker_spawned := false
+## The live PSX environment handle. PSXLook owns the values; this is the
+## read-only reference the diagnostics and probes inspect.
 var _env: Environment = null
-var _ambient_base := 0.35
-var _fog_base := 0.03
 ## A hunter must be on top of the crawler's spawn mark to defer it. Being
 ## anywhere in the open hold (or just inside the hall mouth) must not.
 const HOST_CRAWLER_DEFER := 8.0
@@ -109,23 +112,20 @@ const HOST_CRAWLER_DEFER := 8.0
 # A developer-facing toggle: any chassis gets a clean full-colour live feed,
 # the world is lit for low-light reading, and hostile bodies ignore the fleet.
 var debug_vision := false
-var _ambient_color_base := Color(0.18, 0.22, 0.3, 1.0)
-var _tonemap_base := 1.0
-const DEBUG_AMBIENT_ENERGY := 1.35
-const DEBUG_AMBIENT_COLOR := Color(0.92, 0.95, 1.0, 1.0)
-const DEBUG_FOG := 0.0
-const DEBUG_EXPOSURE := 1.55
 const DEBUG_LAMP_RANGE := 22.0
 
 # M5 map.
 var _map_open := false
+## Viewport size the map sheet was last laid out for. The map content cannot
+## change while it is open (it opens only from the table, never while piloting),
+## so the sheet is fed once in _open_map() and only re-fed on a resize.
+var _map_sent_size := Vector2.ZERO
 var _visited_zones := {"bay": true}
-var _cafeteria_seen := false
 # Radar-charted walls: persistent world-grid of scanner returns, shown as ink
 # on the hand-copy map. The sweep literally fills the map in.
 const CHART_GRID := 0.5
 const CHART_CAP := 900
-var _charted := {}          # "gx:gz" -> true
+var _charted := {}          # Vector2i(gx, gz) -> true
 var _charted_pts: Array = []  # Vector3 per charted cell (parallel, for draw)
 
 # Four authored Cold Hold patrol loops. Each stays clear of the crawler side
@@ -234,7 +234,6 @@ const PHOTO_SHOW_TIME := 2.2   # the still holds on screen this long
 var _photo_cd := 0.0
 var _photo_show := 0.0
 var _photo_count := 0
-var _no_optics_cd := 0.0
 var _objective_cached := "___"
 
 # The physical map on the table: same drawing as the overlay, rendered into a
@@ -260,13 +259,9 @@ func _ready() -> void:
 	_setup_table_map()
 
 	# Deck B darkness is driven per-frame by PSXLook, which owns the runtime
-	# duplicate of the authored Environment.
+	# duplicate of the authored Environment; main only keeps the handle (the
+	# probes read it) and never snapshots the values it used to shadow.
 	_env = PSXLook.environment
-	if _env != null:
-		_ambient_base = _env.ambient_light_energy
-		_fog_base = _env.fog_density
-		_ambient_color_base = _env.ambient_light_color
-		_tonemap_base = _env.tonemap_exposure
 
 	# Zone 1 is threat-free by design. Hosts only wake in the Cold Hold.
 	_spawn_collector()
@@ -291,6 +286,9 @@ func _ready() -> void:
 	player.focus_changed.connect(hud.set_prompt)
 	player.interact_pressed.connect(_on_interact_pressed)
 	player.leave_requested.connect(_leave_chair)
+	# The authored locker/hatch lines ("EMPTY", "SEALED", "LOCKED") ride this
+	# signal; without it they only ever tick to the drone's mirror channel.
+	player.hud_message.connect(_on_player_hud_message)
 	if collector != null and is_instance_valid(collector):
 		collector.player_body = player
 
@@ -353,14 +351,20 @@ func _process(delta: float) -> void:
 	if _meters_t <= 0.0:
 		_meters_t = 0.5
 		hud.set_meters(GameState.o2, GameState.h2o, GameState.kcal, GameState.clock_hours)
-	hud.debug_tick(delta, Engine.get_frames_per_second(), player.global_position, NoiseBus.count,
-			_host_debug())
+	# F3 diagnostics are expensive (roster walk + a formatted line), and
+	# debug_tick throws the result away while the label is hidden.
+	var dbg := ""
+	if hud.debug_label_visible():
+		dbg = _host_debug()
+	hud.debug_tick(delta, Engine.get_frames_per_second(), player.global_position, NoiseBus.count, dbg)
 
-	# Objective chatter while piloting.
+	# Objective chatter while piloting. `zone` is hoisted: the darkness test
+	# below reuses it instead of paying for a second _zone_at() in the frame.
 	var amt := 0.0
+	var zone := ""
 	if GameState.sortie == GameState.Sortie.PILOTING and drone != null:
 		var dpos: Vector3 = drone.global_position
-		var zone: String = _zone_at(dpos)
+		zone = _zone_at(dpos)
 		var in_zone2 := zone == "zone2" or zone == "crawler"
 		# The tether follows the active chassis across each threshold. The
 		# active drone's own `anchor_pos` is what the physics clamp reads.
@@ -371,7 +375,12 @@ func _process(delta: float) -> void:
 		# Distance from the winch is a readout, not a fault: the live tube stays
 		# clean out to the relay. Static is only the authored story beats below.
 		hud.set_drone_status(dist, drone.MAX_TETHER, bars, drone.battery)
-		hud.set_fleet_line(_fleet_line())
+		# The line is static unless the roster, the link, a cargo note or a
+		# displayed charge digit moves; a cheap integer signature guards it.
+		var fsig := _fleet_signature()
+		if fsig != _fleet_sig:
+			_fleet_sig = fsig
+			hud.set_fleet_line(_fleet_line())
 
 		# Live-tube stress: the picture tears and ghosts with the chassis.
 		if stalker != null and is_instance_valid(stalker):
@@ -405,14 +414,14 @@ func _process(delta: float) -> void:
 
 		# The map inks itself with travel: only places the drone has been.
 		_visited_zones[zone] = true
-		if zone == "cafeteria" and not _cafeteria_seen:
-			_cafeteria_seen = true
 		# Cabin doors are loud: they open for the drone and announce it.
 		ship.service_doors(dpos, delta)
 
 		# Pickups: one cargo slot per chassis. A second bot cannot duplicate a
-		# unique objective item while the first is already carrying it.
-		if _cargo == "":
+		# unique objective item while the first is already carrying it. The
+		# catch window is excluded: the wreck has just dropped what it carried,
+		# and a dying chassis must not immediately pick it back up.
+		if _cargo == "" and not _reeling:
 			if not _camera_installed and not _camera_held \
 					and not _fleet_has("camera") \
 					and dpos.distance_to(_camera_site_pos) < 1.2:
@@ -455,13 +464,13 @@ func _process(delta: float) -> void:
 
 	# Deck B is genuinely dark; Deck A keeps its authored ambient. The shift
 	# is a slow fade so crossing the airlock reads as light dying behind you.
+	# `zone` is "" outside a piloted frame, so a null drone can never go dark.
 	var want_dark := GameState.sortie == GameState.Sortie.PILOTING and drone != null \
-			and _zone_at(drone.global_position) in ["zone2", "crawler", "engine"]
+			and _is_dark_zone(zone)
 	_set_zone2_dark(want_dark, delta)
 
 	# Still camera: slow shutter recharge + photo display timing. Available on
 	# every first-iteration drone; there is no optics install gate any more.
-	_no_optics_cd = maxf(_no_optics_cd - delta, 0.0)
 	if GameState.sortie == GameState.Sortie.PILOTING:
 		_photo_cd = maxf(_photo_cd - delta, 0.0)
 		if _photo_show > 0.0:
@@ -474,13 +483,23 @@ func _process(delta: float) -> void:
 	_sync_feed_view()
 	_tick_catch_face(delta)
 
-	if _map_open:
+	# The sheet's data cannot change while it is up (it only opens at the table,
+	# never while piloting), so it is fed once in _open_map(). Only a resize
+	# needs a re-fit here.
+	if _map_open and get_viewport().size != _map_sent_size:
 		hud.show_map(_map_data())
+		_map_sent_size = get_viewport().size
+
+
+## Raw-key fallback. Project input maps can be stale inside a running editor
+## session, so the hotkeys read the physical key directly as well.
+func _key_pressed(e: InputEvent, code: int) -> bool:
+	return e is InputEventKey and e.pressed and not e.echo \
+			and (e.physical_keycode == code or e.keycode == code)
 
 
 func _input(event: InputEvent) -> void:
-	var f5key: bool = event is InputEventKey and event.pressed and not event.echo \
-			and (event.physical_keycode == KEY_F5 or event.keycode == KEY_F5)
+	var f5key: bool = _key_pressed(event, KEY_F5)
 	var psx_key: bool = (event.is_action_pressed("psx_menu") and not event.is_echo()) or f5key
 	if _psx_open:
 		if psx_key or event.is_action_pressed("pause") \
@@ -505,24 +524,18 @@ func _input(event: InputEvent) -> void:
 			and event.button_index == MOUSE_BUTTON_LEFT
 	# Also read the raw F key: project input maps can be stale in a running
 	# editor session, and the shutter must never depend on that.
-	var fkey: bool = event is InputEventKey and event.pressed and not event.echo \
-			and (event.physical_keycode == KEY_F or event.keycode == KEY_F)
+	var fkey: bool = _key_pressed(event, KEY_F)
 	# Raw L fallback for the flashlight: same stale-input-map defence.
-	var lkey: bool = event is InputEventKey and event.pressed and not event.echo \
-			and (event.physical_keycode == KEY_L or event.keycode == KEY_L)
+	var lkey: bool = _key_pressed(event, KEY_L)
 	# Raw R fallback, same reasoning as F: the input map can be stale inside a
 	# running editor session, and the winch must never depend on that.
-	var rkey: bool = event is InputEventKey and event.pressed and not event.echo \
-			and (event.physical_keycode == KEY_R or event.keycode == KEY_R)
+	var rkey: bool = _key_pressed(event, KEY_R)
 	# Fleet link keys: Q cycles, 1..N selects directly. Raw fallbacks for the
 	# same stale-input-map reason as F/R.
-	var qkey: bool = event is InputEventKey and event.pressed and not event.echo \
-			and (event.physical_keycode == KEY_Q or event.keycode == KEY_Q)
-	var bkey: bool = event is InputEventKey and event.pressed and not event.echo \
-			and (event.physical_keycode == KEY_B or event.keycode == KEY_B)
+	var qkey: bool = _key_pressed(event, KEY_Q)
+	var bkey: bool = _key_pressed(event, KEY_B)
 	# Raw F4 for the developer vision toggle, independent of the input map.
-	var f4key: bool = event is InputEventKey and event.pressed and not event.echo \
-			and (event.physical_keycode == KEY_F4 or event.keycode == KEY_F4)
+	var f4key: bool = _key_pressed(event, KEY_F4)
 	if f4key and not _paused:
 		_toggle_debug_vision()
 		return
@@ -665,6 +678,12 @@ func _on_interact_pressed() -> void:
 		player._on_interact_pressed()
 
 
+## The authored interact lines on lockers, the barricade and the hatch
+## ("EMPTY", "SEALED", "LOCKED") arrive here and get the standard ticker slot.
+func _on_player_hud_message(text: String) -> void:
+	hud.show_message(text, 2.5)
+
+
 # --------------------------------------------------------------------------
 # The hand-copy map (M5)
 # --------------------------------------------------------------------------
@@ -675,6 +694,8 @@ func _open_map() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	Sfx.play("tick", Sfx.CENTER, -10.0)
 	hud.show_map(_map_data())
+	# Record the size the sheet was fitted to; _process only re-feeds on change.
+	_map_sent_size = get_viewport().size
 
 
 func _close_map() -> void:
@@ -710,7 +731,7 @@ func _on_wall_charted(pos: Vector3) -> void:
 		return
 	var gx := int(round(pos.x / CHART_GRID))
 	var gz := int(round(pos.z / CHART_GRID))
-	var key := "%d:%d" % [gx, gz]
+	var key := Vector2i(gx, gz)
 	if _charted.has(key):
 		return
 	_charted[key] = true
@@ -816,6 +837,12 @@ func _zone_at(p: Vector3) -> String:
 	return "bay"
 
 
+## The unlit rooms: every Deck B/C compartment the flashlight exists for.
+## One predicate, so the darkness test and the tether/lamp rules cannot drift.
+func _is_dark_zone(zone: String) -> bool:
+	return zone == "zone2" or zone == "crawler" or zone == "engine"
+
+
 # --------------------------------------------------------------------------
 # Objective banner
 # --------------------------------------------------------------------------
@@ -869,19 +896,21 @@ func _hud_pickup_message() -> void:
 # Hosts
 # --------------------------------------------------------------------------
 
-## The four Cold Hold hunters. Called once, on the first active-drone entry;
+## The four Cold Hold watchers. Called once, on the first active-drone entry;
 ## they persist for the session. Spawn points are 20+ m from the threshold, so
-## crossing the airlock never ends in an instant kill.
+## crossing the airlock never ends in an instant kill. These are watchers, not
+## hunters: each closes to its stand-off and plants, and the only loss is a
+## contact the player drives into (src/host/watcher.gd).
 func _spawn_zone2_hosts(force := false) -> void:
 	if _zone2_spawned and not force:
 		return
 	_zone2_spawned = true
 	for i in mini(ship.zone2_spawns.size(), 4):
 		var route: Array = ZONE2_ROUTES[i % ZONE2_ROUTES.size()].duplicate()
-		var h = _host(ship.zone2_spawns[i], route, true)
+		var w = _watcher(ship.zone2_spawns[i], route)
 		# Start on the leg nearest the authored spawn, not always index 0.
-		h._wp = _nearest_route_point(h, route)
-		h.drone = drone
+		w._wp = _nearest_route_point(w, route)
+		w.drone = drone
 
 
 func _nearest_route_point(h, route: Array) -> int:
@@ -895,6 +924,9 @@ func _nearest_route_point(h, route: Array) -> int:
 	return best
 
 
+## The ordinary attacking zombie. The shipped level places none of these (the
+## Cold Hold bodies are watchers); this factory serves the autotest probes and
+## editor/dev placement.
 func _host(pos: Vector3, waypoints: Array, aggressive := false):
 	var host := HOST_SCENE.instantiate()
 	if aggressive:
@@ -911,19 +943,43 @@ func _host(pos: Vector3, waypoints: Array, aggressive := false):
 	return host
 
 
+## A Cold Hold watcher: the zombie body with the watch contract instead of the
+## attack (see src/host/watcher.gd). It uses the aggressive Zone 2 senses —
+## wide eyes, the short still radius, breathing — so it reads the room exactly
+## like the hunters it replaced; only its stalk differs.
+func _watcher(pos: Vector3, waypoints: Array):
+	var watcher := WATCHER_SCENE.instantiate()
+	watcher.configure_aggressive()
+	watcher.ghosted = debug_vision
+	_add_world(watcher)
+	PSXLook.convert_subtree(watcher)
+	watcher.global_position = pos
+	watcher.waypoints = waypoints
+	watcher.reset()
+	watcher.drone_caught.connect(_on_drone_caught.bind(watcher))
+	NoiseBus.emitted.connect(watcher._on_noise)
+	hosts.append(watcher)
+	return watcher
+
+
 func _nearest_host(pos: Vector3):
 	var best = null
 	var best_d := INF
-	var candidates: Array = hosts.duplicate()
-	if stalker != null and is_instance_valid(stalker):
-		candidates.append(stalker)
-	for h in candidates:
+	# Iterate the roster in place: this runs per frame on the live-dread path,
+	# so the old duplicate()+append is an allocation per call for nothing.
+	for h in hosts:
 		if h == null or not is_instance_valid(h):
 			continue
 		var d: float = pos.distance_to(h.global_position)
 		if d < best_d:
 			best_d = d
 			best = h
+	# The engine-room Stalker is not in `hosts`: consider it as one extra body.
+	if stalker != null and is_instance_valid(stalker):
+		var sd: float = pos.distance_to(stalker.global_position)
+		if sd < best_d:
+			best_d = sd
+			best = stalker
 	return best
 
 
@@ -979,7 +1035,6 @@ func _on_crawler_finished() -> void:
 func _spawn_engine_stalker() -> void:
 	if stalker != null and is_instance_valid(stalker):
 		return
-	_stalker_spawned = true
 	stalker = STALKER_SCENE.instantiate()
 	stalker.ghosted = debug_vision
 	_add_world(stalker)
@@ -1004,7 +1059,7 @@ func _spawn_engine_stalker() -> void:
 	stalker.lunge_started.connect(_on_stalker_lunge)
 	NoiseBus.emitted.connect(stalker._on_noise)
 	if scanner != null:
-		scanner.add_mass(stalker, 2.2)
+		scanner.add_mass(stalker, 3.3)
 
 
 func _on_stalker_lunge() -> void:
@@ -1043,7 +1098,7 @@ func _toggle_debug_vision() -> void:
 	if GameState.sortie == GameState.Sortie.PILOTING \
 			and drone != null and is_instance_valid(drone):
 		zone = _zone_at(drone.global_position)
-	var dark := zone == "zone2" or zone == "crawler" or zone == "engine"
+	var dark := _is_dark_zone(zone)
 	_set_zone2_dark(dark, 1.0)
 
 	hud.set_debug_view(debug_vision)
@@ -1227,12 +1282,8 @@ func _on_drone_caught(host) -> void:
 		_clear_catch_face()
 		_teardown_sortie(true)
 		return
-	_drone_index = clampi(_drone_index, 0, drones.size() - 1)
-	drone = drones[_drone_index]
-	_cargo = drone.cargo
+	_link_bot(_drone_index)
 	_reeling = false
-	drone.live_view = _live_feed_active()
-	drone.set_controlled(true)
 	_bind_active()
 	_clear_catch_face()
 	# The catcher must let go of the chassis it just killed, or it stays
@@ -1240,8 +1291,6 @@ func _on_drone_caught(host) -> void:
 	if host != null and is_instance_valid(host) and host.has_method("release_catch"):
 		host.release_catch()
 	hud.set_piloting(true)
-	_photo_show = 0.0
-	hud.hide_photo()
 	hud.show_message("LINK: BOT %d" % (drone.bot_index + 1), 3.0)
 	if _pending_end_card:
 		_show_module_loss_card()
@@ -1279,17 +1328,12 @@ func _start_sortie() -> void:
 	# Resume the fleet you parked when you stood up. Each chassis keeps its own
 	# world position, heading, charge and cargo; only a teardown frees them.
 	if not drones.is_empty():
-		_drone_index = clampi(_drone_index, 0, drones.size() - 1)
-		drone = drones[_drone_index]
-		_cargo = drone.cargo
+		_link_bot(_drone_index)
 		for d in drones:
 			d.live_view = _live_feed_active()
 			d.set_flashlight(_flashlight_installed)
-		drone.set_controlled(true)
 		_bind_active()
 		hud.set_piloting(true)
-		_photo_show = 0.0
-		hud.hide_photo()
 		hud.show_message("LIVE" if _live_feed_active() else "STILL", 1.8)
 		return
 
@@ -1297,15 +1341,10 @@ func _start_sortie() -> void:
 	# a time with B and left in the field; there is never a second body at
 	# launch, so the cradle always reads as the player's own machine.
 	_spawn_drone(0)
-	_drone_index = 0
-	drone = drones[0]
-	drone.set_controlled(true)
-	_cargo = drone.cargo
+	_link_bot(0)
 	_bind_active()
 	hud.set_piloting(true)
 	_photo_cd = 0.0
-	_photo_show = 0.0
-	hud.hide_photo()
 	hud.show_message("LIVE" if _live_feed_active() else "STILL", 1.8)
 
 
@@ -1323,7 +1362,6 @@ func _spawn_drone(slot: int) -> void:
 	d.live_view = _live_feed_active()
 	d.configure_bot(slot)
 	d.set_flashlight(_flashlight_installed)
-	d.feed_message.connect(hud.show_message)
 	d.battery_dead.connect(_on_drone_battery_dead.bind(d))
 	drones.append(d)
 
@@ -1372,15 +1410,9 @@ func _deploy_drone() -> void:
 		drone.velocity = Vector3.ZERO
 		drone.set_controlled(false)
 	_spawn_drone(slot)
-	_drone_index = drones.size() - 1
-	drone = drones[_drone_index]
-	_cargo = drone.cargo
-	drone.live_view = _live_feed_active()
-	drone.set_controlled(true)
+	_link_bot(drones.size() - 1)
 	_bind_active()
 	hud.set_piloting(true)
-	_photo_show = 0.0
-	hud.hide_photo()
 	_deploy_cd = 0.4
 	Sfx.play("tick", Sfx.CENTER, -8.0)
 	hud.show_message("BOT %d DEPLOYED" % (drone.bot_index + 1), 1.8)
@@ -1433,7 +1465,7 @@ func _nearest_relay(pos: Vector3, relays: Array) -> Vector3:
 func _apply_anchor(target, zone: String) -> void:
 	if target == null or not is_instance_valid(target):
 		return
-	var dark := zone == "zone2" or zone == "crawler" or zone == "engine"
+	var dark := _is_dark_zone(zone)
 	if dark:
 		target.anchor_pos = _anchor_for_zone(zone, target.global_position)
 	else:
@@ -1476,6 +1508,20 @@ func _bind_active() -> void:
 	_refresh_chair_prompt()
 
 
+## Make chassis `index` the active link. This is the step set every link change
+## shares (catch survivor, sortie resume, fresh launch, deploy, swap); anything
+## a site does differently stays at its call site.
+func _link_bot(index: int) -> void:
+	_drone_index = clampi(index, 0, drones.size() - 1)
+	drone = drones[_drone_index]
+	_cargo = drone.cargo
+	drone.live_view = _live_feed_active()
+	drone.set_controlled(true)
+	# A stale print must never hang over the new bot's optics window.
+	_photo_show = 0.0
+	hud.hide_photo()
+
+
 func _fleet_line() -> String:
 	if drones.is_empty():
 		return ""
@@ -1497,6 +1543,25 @@ func _fleet_line() -> String:
 	if drones.size() > 1:
 		line += "    [Q] SWAP"
 	return line
+
+
+## Allocation-free signature of everything `_fleet_line()` renders: roster size,
+## linked index, and per bot its number, its displayed charge (the line prints
+## "%3.0f", so the signature rounds the same way) and its cargo note. -1 means
+## "nothing built yet".
+func _fleet_signature() -> int:
+	var sig := drones.size()
+	sig = sig * 31 + _drone_index
+	for d in drones:
+		sig = sig * 31 + d.bot_index
+		sig = sig * 31 + int(round(d.battery))
+		var code := 0
+		if d.cargo == "flashlight":
+			code = 1
+		elif d.cargo == "camera":
+			code = 2
+		sig = sig * 31 + code
+	return sig
 
 
 func _cycle_drone() -> void:
@@ -1521,16 +1586,10 @@ func _switch_drone(index: int) -> void:
 		old.cargo = _cargo
 		old.velocity = Vector3.ZERO
 		old.set_controlled(false)
-	_drone_index = index
-	drone = drones[index]
-	_cargo = drone.cargo
-	drone.live_view = _live_feed_active()
-	drone.set_controlled(true)
+	_link_bot(index)
 	_bind_senses(drone)
 	hud.set_live_feed(_live_feed_active())
 	hud.set_feed_source(_feed_vp)
-	hud.hide_photo()
-	_photo_show = 0.0
 	_swap_cd = 0.2
 	_static_lock = maxf(_static_lock, 0.25)
 	Sfx.play("tick", Sfx.CENTER, -8.0)
@@ -1713,9 +1772,9 @@ func _sync_feed_view() -> void:
 			_feed_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 
-## Resolve the authored catcher rig without owning its scene. Only the two
-## zombies get a kill close-up: the Processor is a maw and the Collector cannot
-## catch, so both must decline.
+## Resolve the authored catcher rig without owning its scene. Only the zombies
+## get a kill close-up — the Host and the Watcher share the Kenney rig — while
+## the Processor is a maw and the Collector cannot catch, so both must decline.
 func _host_kind(host) -> String:
 	if host == null or not is_instance_valid(host) or not (host is Node3D):
 		return ""
@@ -1725,12 +1784,14 @@ func _host_kind(host) -> String:
 	var path := scr.resource_path
 	if path.ends_with("host/stalker.gd"):
 		return "stalker"
+	if path.ends_with("host/watcher.gd"):
+		return "host"   # the watcher wears the Host's zombie rig
 	if path.ends_with("host/host.gd"):
 		return "host"
 	return ""
 
 
-## Head centre, face axis and a conservative skull radius for a catcher.
+## Head centre, face axis and a conservative head radius for a catcher.
 func _resolve_catch_head(host) -> Dictionary:
 	var kind := _host_kind(host)
 	if kind == "host":
@@ -1749,15 +1810,15 @@ func _resolve_catch_head(host) -> Dictionary:
 			"radius": 0.17,
 		}
 	if kind == "stalker":
-		var head_node := host.get_node_or_null("Rig/Hips/Torso/Head") as Node3D
+		var head_node := host.get_node_or_null("Rig/Head") as Node3D
 		if head_node == null:
 			return {}
 		var stalker_basis := head_node.global_transform.basis.orthonormalized()
 		return {
 			"kind": kind,
 			"centre": head_node.global_position,
-			"face": -stalker_basis.z.normalized(),   # authored skull faces -Z
-			"radius": 0.26,
+			"face": -stalker_basis.z.normalized(),   # the centipede head faces -Z
+			"radius": 0.36,
 		}
 	return {}
 
@@ -1896,6 +1957,7 @@ func _teardown_sortie(lost: bool) -> void:
 	hud.set_live_feed(false)
 	hud.set_piloting(false)
 	hud.set_fleet_line("")
+	_fleet_sig = -1              # the line is blank: the next sortie must redraw it
 	hud.set_feed_enabled(true)   # still camera is standard kit, not the module
 	hud.set_prompt("")
 	Sfx.play("static", Sfx.CENTER, -10.0)

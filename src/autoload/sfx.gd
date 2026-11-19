@@ -466,10 +466,7 @@ func _hum() -> PackedFloat32Array:
 		var whine := sin(TAU * 120.0 * t) * sin(t * 0.9) * 0.012
 		b[i] = sub1 + sub2 + lp * 0.55 + whine
 	# Crossfade last 0.4 s into the first 0.4 s.
-	var n0 := int(0.4 * RATE)
-	for i in n0:
-		var w := float(i) / float(n0)
-		b[i] = b[i] * w + b[b.size() - n0 + i] * (1.0 - w)
+	_loopify(b, 0.4)
 	return b
 
 

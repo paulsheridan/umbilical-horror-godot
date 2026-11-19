@@ -65,6 +65,10 @@ var _feed_state := 0
 var _feed_t := 0.0
 var _feed_part: Node3D = null
 var _chew := 0.0
+## Child count of the pile at the last scan that found nothing to feed. A scan
+## that fails cannot succeed again until the count changes (a deposit appends,
+## a consumed part queue_free()s), so the whole pile is not re-read every frame.
+var _pile_scan_count := -1
 
 var _rig: Node3D
 var _jaw: Node3D
@@ -109,6 +113,7 @@ func reset() -> void:
 	_feed_t = 0.0
 	_feed_part = null
 	_chew = 0.0
+	_pile_scan_count = -1
 	_reach_target = REST_R
 	_hand_local = [REST_L, REST_R]
 	_hand_target = [REST_L, REST_R]
@@ -133,6 +138,8 @@ func set_dormant(on: bool) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if GameState.paused:
+		return
 	if dormant:
 		_aim_hands(delta)
 		_animate(delta)
@@ -380,14 +387,22 @@ func _feed_tick(delta: float) -> void:
 
 ## The top feedable body part on the pile. The old heap is tagged as dressing
 ## so the chamber never empties; the Collector's fresh deposits are the food.
+## A failed scan is remembered by child count: nothing can turn a part feedable
+## again without the pile gaining or losing a child, so repeat misses are free.
 func _next_pile_part() -> Node3D:
 	if pile == null or not is_instance_valid(pile):
+		return null
+	var count := pile.get_child_count()
+	if count == _pile_scan_count:
 		return null
 	var kids := pile.get_children()
 	for i in range(kids.size() - 1, -1, -1):
 		var n = kids[i]
 		if n is Node3D and n.visible and not n.get_meta("dressing", false):
+			# A hit resets the memo so the next pickup scans normally.
+			_pile_scan_count = -1
 			return n
+	_pile_scan_count = count
 	return null
 
 

@@ -221,11 +221,12 @@ func _run() -> void:
 
 	var st = STALKER_SCENE.instantiate()
 	add_child(st)
-	_check(st.get_node_or_null("Rig/Hips/Torso/Head") is Node3D and st._head != null,
-			"the Stalker prefab owns its skeletal rig")
-	_check(st._arm_l != null and st._arm_r != null
-			and st._leg_l != null and st._leg_r != null,
-			"the Stalker prefab owns its limbs")
+	_check(st.get_node_or_null("Rig/Head") is Node3D and st._head != null,
+			"the Stalker prefab owns its centipede head")
+	_check(st._rig != null and st._rig.leg_count() == 30,
+			"the Stalker prefab owns its thirty IK legs")
+	_check(st.get_node_or_null("CollisionShape3D") is CollisionShape3D,
+			"the Stalker prefab keeps its collision box")
 	st.queue_free()
 
 	var cr = CRAWLER_SCENE.instantiate()

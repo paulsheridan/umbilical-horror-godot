@@ -22,6 +22,9 @@ var _pitch := 0.0
 var _bob_t := 0.0
 var _step_acc := 0.0
 var _hurry := false
+# Input tracing is a dev switch read from the environment at startup. Env vars
+# cannot change mid-run, so resolve the lookup once instead of per mouse event.
+var _input_debug := OS.get_environment("UMBILICAL_INPUT_DEBUG") != ""
 
 
 func _ready() -> void:
@@ -34,13 +37,13 @@ func _ready() -> void:
 
 func _input(event: InputEvent) -> void:
 	if Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED:
-		if OS.get_environment("UMBILICAL_INPUT_DEBUG") != "":
+		if _input_debug:
 			print("INPUT_DEBUG: motion event while NOT captured (mode=%d)" % Input.get_mouse_mode())
 		return
 	if event is InputEventMouseMotion:
 		if GameState.sortie == GameState.Sortie.PILOTING:
 			return   # the chair does not turn your body
-		if OS.get_environment("UMBILICAL_INPUT_DEBUG") != "":
+		if _input_debug:
 			print("INPUT_DEBUG: motion rel=%s (captured)" % event.relative)
 		rotate_y(-event.relative.x * MOUSE_SENS)
 		_pitch = clampf(_pitch - event.relative.y * MOUSE_SENS, -1.5, 1.5)
@@ -60,6 +63,14 @@ func _press_interact() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# Paused (ESC overlay): the suit freezes where it stands. No input polling,
+	# no footsteps, no Noise post — the body is still, the overlay is the turn.
+	if GameState.paused:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		move_and_slide()
+		return
+
 	cam.rotation.x = _pitch
 
 	# While the hand-copy map is up, your body is still — reading, not walking.
@@ -115,6 +126,9 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(_delta: float) -> void:
+	# Paused: hold the last focus ray result; nothing is aimable behind a menu.
+	if GameState.paused:
+		return
 	# --- Focus: what's under the point of aim? (only when walking the bay) ---
 	if GameState.sortie == GameState.Sortie.PILOTING or GameState.map_open:
 		return

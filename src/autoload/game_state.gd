@@ -25,7 +25,9 @@ var clock_hours := 0.0
 
 
 func _process(delta: float) -> void:
-	if not running:
+	# The ESC pause overlay freezes the sim: the clock and the meters must not
+	# keep burning behind it (the drone and physics already honour the flag).
+	if not running or paused:
 		return
 	var hours := delta / 3600.0
 	clock_hours += hours

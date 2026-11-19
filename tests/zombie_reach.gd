@@ -3,17 +3,22 @@ extends Node3D
 ## Stalker in its chase both hold their hands out toward the drone while the
 ## legs keep running the authored locomotion. Every other state has to leave
 ## the arms to the authored clip.
+## The Watcher — the zombie that plants instead of attacking — reaches only
+## while it is still closing; planted at its stand-off its arms hang at the
+## authored clip.
 ##
 ## Run: godot --headless --path . res://tests/zombie_reach.tscn
 
 const HOST_SCENE := preload("res://scenes/actors/host.tscn")
 const STALKER_SCENE := preload("res://scenes/actors/stalker.tscn")
+const WATCHER_SCENE := preload("res://scenes/actors/watcher.tscn")
 
 var host: CharacterBody3D
 var stalker: CharacterBody3D
 var drone: CharacterBody3D
 var skeleton: Skeleton3D
 var _failed := false
+var _wcaught := false
 
 
 ## The hosts read exactly these three properties off the bound drone.
@@ -151,12 +156,14 @@ func _run() -> void:
 		_check(to_drone.dot((hand - arm_pos).normalized()) > 0.9,
 				"the %s aims at the drone" % pair[0])
 
-	# --- Standing at hold distance is not a reach, even while it can see ----
+	# --- The fixed host closes: no hold distance any more -------------------
 	drone.global_position = host.global_position + Vector3(0, 0.12, -5.0)
 	await _wait(25)
-	_check(host.state == host.State.STALK and host._sees and host.reach_weight < 0.1,
-			"a host standing at hold distance drops its arms")
-	_check(host._anim_name == "idle", "the standing host plays the idle clip")
+	var close_gap: float = host.global_position.distance_to(drone.global_position)
+	_check(close_gap < 4.6, "a stalking host closes on a drone 5 m out (%.1f m)" % close_gap)
+	_check(host.state == host.State.STALK and host._sees and host.reach_weight > 0.6,
+			"a stalking host keeps its hands out while it closes")
+	_check(host._anim_name == "run", "the closing host keeps the run clip")
 
 	# --- Loss of the drone: the arms drop back to the clip ------------------
 	host._give_up()
@@ -180,7 +187,52 @@ func _run() -> void:
 	_check(host.reach_weight < 0.1, "a ghosted host never reaches")
 	host.ghosted = false
 
-	# --- Stalker: chasing with both hands out ------------------------------
+	# --- Watcher: it plants at the stand-off and watches, arms down ---------
+	host.drone = null
+	host._give_up()
+	var watcher = WATCHER_SCENE.instantiate()
+	add_child(watcher)
+	watcher.global_position = Vector3(-8, 0.2, 4)
+	watcher.rotation.y = 0.0
+	watcher.waypoints = []
+	watcher.drone = drone
+	watcher.reset()
+	_wcaught = false
+	watcher.drone_caught.connect(func() -> void: _wcaught = true)
+	drone.global_position = watcher.global_position + Vector3(0, 0.12, -9.0)
+	drone.velocity = Vector3(0, 0, -0.5)
+	watcher.force_stalk(drone.global_position)
+	await _wait(30)
+	_check(watcher.state == watcher.State.STALK and watcher.reach_weight > 0.6,
+			"an approaching watcher reaches while it closes")
+	await _wait(90)
+	var planted_gap: float = watcher.global_position.distance_to(drone.global_position)
+	_check(Vector2(watcher.velocity.x, watcher.velocity.z).length() < 0.15,
+			"a watcher plants at the stand-off instead of attacking")
+	_check(absf(planted_gap - watcher.WATCH_STANDOFF) < 1.0,
+			"the stand-off holds the drone at %.1f m" % planted_gap)
+	_check(watcher.state == watcher.State.STALK and watcher._sees
+			and watcher.reach_weight < 0.1,
+			"a planted watcher watches with its arms down")
+	_check(watcher._anim_name == "idle", "the planted watcher plays the idle clip")
+	var planted_at: Vector3 = watcher.global_position
+
+	# The player approaches: it does not move.
+	drone.global_position = watcher.global_position + Vector3(0, 0.12, -2.5)
+	await _wait(40)
+	_check(watcher.global_position.distance_to(planted_at) < 0.15
+			and Vector2(watcher.velocity.x, watcher.velocity.z).length() < 0.15,
+			"a watcher does not move when the player approaches")
+	_check(watcher.state == watcher.State.STALK and watcher._sees,
+			"the approached watcher keeps watching")
+
+	# Too close: contact is the fail state.
+	drone.global_position = watcher.global_position + Vector3(0, 0.12, -0.8)
+	await _wait(12)
+	_check(_wcaught, "contact inside catch range still kills")
+	watcher.drone = null
+
+	# --- Stalker: the hunt pose and the spook rear --------------------------
 	stalker = STALKER_SCENE.instantiate()
 	add_child(stalker)
 	stalker.global_position = Vector3(8, 0.2, 4)
@@ -195,26 +247,25 @@ func _run() -> void:
 	drone.velocity = Vector3(0, 0, -0.5)
 	stalker.force_chase()
 	stalker._sees = true
-	await _wait(20)
-	_check(stalker.arm_reach > 0.6 and stalker._arm_l.rotation.x < -0.55
-			and stalker._arm_r.rotation.x < -0.55,
-			"a chasing stalker holds both arms out")
+	await _wait(25)
+	_check(stalker.arm_reach > 0.3 and stalker._rig.hunt_pose > 0.25,
+			"a prowling stalker carries its raised hunt forelegs")
 
-	# It drops back to the walk swing when the chase ends.
+	# It drops the pose when the hunt ends.
 	drone.velocity = Vector3.ZERO
 	drone.global_position = Vector3(8, 0.32, -26.0)
 	stalker._enter_patrol()
 	await _wait(30)
-	_check(stalker.state == stalker.State.PATROL
-			and stalker._arm_l.rotation.x > -0.3,
-			"a stalker that lost the chase drops its arms")
+	_check(stalker.state == stalker.State.PATROL and stalker.arm_reach < 0.1,
+			"a stalker that lost the hunt drops its forelegs")
 
-	# The authored lurk/lunge reach is untouched.
-	stalker._enter_lurk()
+	# The spook hold rears the graspers high.
+	stalker.state = stalker.State.PLAY
+	stalker._play_phase = stalker.PLAY_PHASE_HOLD
 	stalker._animate(0.2)
 	stalker._animate(0.2)
-	_check(stalker._arm_l.rotation.x < -0.7 and stalker._arm_r.rotation.x < -0.7,
-			"the lurk reach is unchanged")
+	_check(stalker._rig.foreleg_pitch() < -0.6,
+			"the spook hold rears the forelegs")
 
 	print("ZOMBIE REACH", " FAILED" if _failed else " PASS")
 	get_tree().quit(1 if _failed else 0)

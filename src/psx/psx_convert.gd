@@ -21,6 +21,11 @@ static func convert(root: Node, cache: Dictionary = {}) -> Array:
 	var entries: Array = []
 	var seen := {}
 	var nodes: Array[Node] = []
+	# The root itself is a convert target too: callers normally pass a container,
+	# but a MeshInstance3D/CSGShape3D root has a material of its own (PSX._meshes
+	# includes it for that reason).
+	if root is CSGShape3D or root is MeshInstance3D:
+		nodes.append(root)
 	nodes.append_array(root.find_children("*", "CSGShape3D", true, false))
 	nodes.append_array(root.find_children("*", "MeshInstance3D", true, false))
 	for node in nodes:
@@ -49,19 +54,6 @@ static func restore(entries: Array) -> void:
 			"mesh_surface":
 				node.set_surface_override_material(int(e.get("surface", 0)),
 						e.get("original"))
-
-
-## True when `node` should be represented by the densified MeshInstance child
-## rather than its own CSG surface.
-static func is_density_hidden(node: Node) -> bool:
-	return node != null and is_instance_valid(node) \
-			and node.has_meta("psx_density_hidden")
-
-
-## Converts only a new subtree. Used after runtime spawns. `cache` is shared so
-## repeated spawns reuse the same ShaderMaterials.
-static func convert_subtree(root: Node, cache: Dictionary = {}) -> Array:
-	return PSXConvert.convert(root, cache)
 
 
 ## True for a material this converter (or PSX.from_material) already built.
@@ -181,16 +173,19 @@ static func shrink_textures(cache: Dictionary, size: int, colors: int,
 	for source: BaseMaterial3D in cache.keys():
 		var psx: ShaderMaterial = cache[source]
 		var texture: Texture2D = source.albedo_texture
-		if texture == null:
+		if texture == null or texture is ViewportTexture:
 			continue
-		if texture is ViewportTexture or texture.get_class() == "ViewportTexture":
+		# The cache is checked before decoding: a rebuilt world must not pay for
+		# an image it already shrank (textures are expensive to read back).
+		var key := texture.get_instance_id()
+		if state.has(key):
+			psx.set_shader_parameter(&"albedo_texture", state[key])
 			continue
-		var image: Image = null
-		if texture is ImageTexture:
-			image = (texture as ImageTexture).get_image()
+		# Not only ImageTexture: the albedos here are NoiseTexture2D,
+		# CompressedTexture2D and GradientTexture2D, all of which hand back an
+		# image that PSXTexture.shrink can bake (the addon shrinks any texture).
+		var image: Image = texture.get_image()
 		if image == null:
 			continue
-		var key := texture.get_instance_id()
-		if not state.has(key):
-			state[key] = load(PSX_TEXTURE).shrink(texture, size, colors)
+		state[key] = load(PSX_TEXTURE).shrink(texture, size, colors)
 		psx.set_shader_parameter(&"albedo_texture", state[key])

@@ -1,6 +1,6 @@
 extends Node3D
 ## Focused host-AI rules probe. Builds a synthetic room + wall so sight,
-## line-of-sight loss, stillness safety and stalking distance can be tested
+## line-of-sight loss, stillness safety and the closing pursuit can be tested
 ## without depending on the ship's authored geometry.
 ##
 ## Run: godot --headless --path . res://tests/host_ai_rules.tscn
@@ -96,16 +96,28 @@ func _run() -> void:
 	await _wait(5)
 	_check(host.state == host.State.STALK, "moving drone in the open triggers a stalk")
 
-	# --- Stalk keeps its distance instead of beelining ----------------------
-	await _wait(120)
+	# --- Stalk closes on the drone instead of watching it -------------------
+	await _wait(45)
 	var gap: float = host.global_position.distance_to(drone.global_position)
+	_check(gap < 4.5, "stalk closes on a visible drone (%.1f m)" % gap)
 	_check(host.state == host.State.STALK, "stalk holds while the drone is visible")
-	_check(gap > 3.0, "stalk keeps distance (%.1f m)" % gap)
+	_check(host._anim_name == "run", "the closing host plays the run clip")
+	await _wait(200)   # 5 m at ~1.6 m/s: run the drone all the way down
+	_check(_caught, "a visible drone in the open is run down and caught")
 
-	# --- Stopping breaks sight; it searches instead of catching -------------
+	# --- Stopping out of reach breaks sight; it searches instead of catching -
+	_caught = false
+	host.reset()
+	host.rotation.y = 0.0
+	host.global_position = Vector3(0, 0.2, 0)
+	drone.global_position = Vector3(0, 0.32, -8.0)
+	drone.velocity = Vector3(0, 0, -1)
+	await _wait(5)
+	_check(host.state == host.State.STALK, "a moving drone is acquired again")
+	await _wait(30)   # close partway; still well outside catch range
 	drone.velocity = Vector3.ZERO
-	await _wait(420)   # > LOSE_SIGHT_TIME + walk-to-memory
-	_check(not _caught, "a drone that stops is not closed on and caught")
+	await _wait(420)
+	_check(not _caught, "a drone that stops out of reach is not caught")
 	_check(host.state != host.State.STALK, "stopping ends the stalk")
 
 	# --- Frozen inside the old press range is not a catch -------------------

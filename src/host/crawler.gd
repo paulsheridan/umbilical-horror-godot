@@ -22,19 +22,15 @@ const Mats := preload("res://src/mats.gd")
 const SPEED_MIN := 0.60
 const SPEED_MAX := 0.90
 const HOLD_DIST := 2.6          # never crawls inside this
-const YANK_DIST := 2.45         # the arm takes it here
 const YANK_TIME := 15.0         # or after this long, whichever comes first
 const HOLD_VOICE_TIME := 2.6
 const YANK_ANIM := 1.25
 const YANK_DRAG := 16.0
 const SCRAPE_INTERVAL := 0.55
 
+## The one-shot beat speaks a single line, so this holds exactly that line.
 const LINES := [
 	"It's in the walls.",
-	"Don't look.",
-	"My legs.",
-	"You're not real.",
-	"Don't leave me.",
 ]
 
 var drone = null
@@ -50,7 +46,6 @@ var _t := 0.0
 var _hold_t := 0.0
 var _yank_t := 0.0
 var _scrape_t := 0.0
-var _line_i := 0
 ## Direction of the final drag: toward the hallway's far opening, not simply
 ## away from the drone. Set from the authored entrance/grab marks at start().
 var _yank_dir_world := Vector3(0.0, 0.0, -1.0)
@@ -92,7 +87,6 @@ func start(from_pos: Vector3, face_pos: Vector3) -> void:
 	_hold_t = 0.0
 	_yank_t = 0.0
 	_scrape_t = 0.0
-	_line_i = 0
 	visible = true
 	if _rig != null:
 		_rig.visible = true
@@ -129,6 +123,8 @@ func force_yank() -> void:
 
 
 func _process(delta: float) -> void:
+	if GameState.paused:
+		return
 	if not active or done:
 		return
 	_t += delta
@@ -156,10 +152,10 @@ func _crawl(delta: float) -> void:
 	var to: Vector3 = drone.global_position - global_position
 	to.y = 0.0
 	var d := to.length()
-	if d <= HOLD_DIST or d <= YANK_DIST:
+	if d <= HOLD_DIST:
 		_phase = 2
 		_hold_t = 0.0
-		_say(LINES[mini(_line_i, LINES.size() - 1)])
+		_say(LINES[0])
 		Sfx.play("crawler_voice", global_position, -1.0, 0.86)
 		return
 	if _t >= YANK_TIME:
@@ -174,7 +170,7 @@ func _crawl(delta: float) -> void:
 	if global_position.distance_to(drone.global_position) <= HOLD_DIST:
 		_phase = 2
 		_hold_t = 0.0
-		_say(LINES[mini(_line_i, LINES.size() - 1)])
+		_say(LINES[0])
 		Sfx.play("crawler_voice", global_position, -1.0, 0.86)
 
 
@@ -289,10 +285,6 @@ func _animate(delta: float) -> void:
 		_arm_l.rotation.x = -0.25 + sin(gait) * 0.55
 	if _arm_r != null:
 		_arm_r.rotation.x = -0.25 - sin(gait) * 0.55
-	# Optional eyes: two wet pinpricks, bright only at close range.
-	for eye in _eyes:
-		if eye is Node3D:
-			pass
 	if _alien_arm != null and _alien_arm.visible and _phase == 3:
 		_alien_arm.position.z = lerpf(-2.6, -0.2,
 				clampf(_yank_t / YANK_ANIM, 0.0, 1.0))

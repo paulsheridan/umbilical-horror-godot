@@ -75,6 +75,36 @@ func _ink(a: float) -> Color:
 	return Color(0.80, 0.72, 0.55, a)
 
 
+## One hand-traced compartment: inked when its zone has been visited, hatched
+## when it has not. The two sheets differ only in stroke weight, hatch pitch,
+## label threshold and where the ink of the name starts.
+func _room_rect(r: Rect2, known: bool, room_name: String, border_w: float,
+		hatch_step: float, hatch_dx: float, label_min_w: float, label_pos: Vector2,
+		label_size: int, label_alpha: float) -> void:
+	if known:
+		draw_rect(r, _ink(0.55), false, border_w)
+		if _big and r.size.x > label_min_w:
+			draw_string(ThemeDB.fallback_font, label_pos, room_name,
+					HORIZONTAL_ALIGNMENT_LEFT, -1, label_size, _ink(label_alpha))
+	else:
+		for i in range(0, int(r.size.x / hatch_step)):
+			var x := r.position.x + i * hatch_step
+			draw_line(Vector2(x, r.position.y), Vector2(x + hatch_dx, r.position.y + r.size.y),
+					_ink(0.12), 1.0)
+		draw_rect(r, _ink(0.15), false, 1.0)
+
+
+## A crossed pin with a hand-written name: dock, relays, anywhere the map
+## names a place rather than a room.
+func _marker(pos: Vector2, half: float, label_text: String, label_size: int,
+		label_offset: Vector2, show_label: bool) -> void:
+	draw_line(pos + Vector2(-half, 0), pos + Vector2(half, 0), _ink(0.95), 1.4)
+	draw_line(pos + Vector2(0, -half), pos + Vector2(0, half), _ink(0.95), 1.4)
+	if show_label:
+		draw_string(ThemeDB.fallback_font, pos + label_offset, label_text,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, label_size, _ink(0.95))
+
+
 func _draw_zone2(visited: Dictionary) -> void:
 	var panel_w := size.x * (0.40 if _big else 0.54)
 	var panel_h := size.y * (0.37 if _big else 0.48)
@@ -97,37 +127,19 @@ func _draw_zone2(visited: Dictionary) -> void:
 				Vector2((room["x1"] - room["x0"]) * zscale,
 						(room["z1"] - room["z0"]) * zscale))
 		var known: bool = visited.has(room["zone"])
-		if known:
-			draw_rect(r, _ink(0.55), false, 1.1 if _big else 1.0)
-			if _big and r.size.x > 42.0:
-				draw_string(ThemeDB.fallback_font,
-						r.position + Vector2(4, r.size.y * 0.5 + 3),
-						room["n"], HORIZONTAL_ALIGNMENT_LEFT, -1, 9, _ink(0.85))
-		else:
-			for i in range(0, int(r.size.x / 5.0)):
-				var x := r.position.x + i * 5.0
-				draw_line(Vector2(x, r.position.y), Vector2(x + 3, r.position.y + r.size.y),
-						_ink(0.12), 1.0)
-			draw_rect(r, _ink(0.15), false, 1.0)
+		_room_rect(r, known, room["n"], 1.1 if _big else 1.0, 5.0, 3.0, 42.0,
+				r.position + Vector2(4, r.size.y * 0.5 + 3), 9, 0.85)
 
 	# The relay: the tether's new home, and the only named place in the hold.
 	var relay: Vector3 = data.get("relay", Vector3(-2.0, 0.3, -40.4))
 	var rp := zcenter + Vector2(relay.x, relay.z) * zscale
-	draw_line(rp + Vector2(-4, 0), rp + Vector2(4, 0), _ink(0.95), 1.4)
-	draw_line(rp + Vector2(0, -4), rp + Vector2(0, 4), _ink(0.95), 1.4)
-	if _big:
-		draw_string(ThemeDB.fallback_font, rp + Vector2(6, 3), "RELAY",
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 10, _ink(0.95))
+	_marker(rp, 4.0, "RELAY", 10, Vector2(6, 3), _big)
 
 	# The engine relay, only once the engine room has actually been entered.
 	if data.get("engine_visited", false):
 		var erelay: Vector3 = data.get("engine_relay", Vector3(21.0, 0.3, -66.2))
 		var ep := zcenter + Vector2(erelay.x, erelay.z) * zscale
-		draw_line(ep + Vector2(-4, 0), ep + Vector2(4, 0), _ink(0.95), 1.4)
-		draw_line(ep + Vector2(0, -4), ep + Vector2(0, 4), _ink(0.95), 1.4)
-		if _big:
-			draw_string(ThemeDB.fallback_font, ep + Vector2(6, 3), "ENGINE",
-					HORIZONTAL_ALIGNMENT_LEFT, -1, 10, _ink(0.95))
+		_marker(ep, 4.0, "ENGINE", 10, Vector2(6, 3), _big)
 
 
 func _draw() -> void:
@@ -149,18 +161,9 @@ func _draw() -> void:
 			Vector2(room["x0"] * _scale, room["z0"] * _scale) + _center,
 			Vector2((room["x1"] - room["x0"]) * _scale, (room["z1"] - room["z0"]) * _scale))
 		var known: bool = visited.has(room["zone"])
-		if known:
-			draw_rect(r, _ink(0.55), false, 1.4 if _big else 1.0)
-			if _big and r.size.x > 60.0:
-				var mid := r.position + r.size * 0.5
-				draw_string(ThemeDB.fallback_font, mid + Vector2(-r.size.x * 0.35, 4),
-						room["n"], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, _ink(0.9))
-		else:
-			for i in range(0, int(r.size.x / 6.0)):
-				var x := r.position.x + i * 6.0
-				draw_line(Vector2(x, r.position.y), Vector2(x + 4, r.position.y + r.size.y),
-						_ink(0.12), 1.0)
-			draw_rect(r, _ink(0.15), false, 1.0)
+		var mid := r.position + r.size * 0.5
+		_room_rect(r, known, room["n"], 1.4 if _big else 1.0, 6.0, 4.0, 60.0,
+				mid + Vector2(-r.size.x * 0.35, 4), 12, 0.9)
 
 	# Radar ink: every wall the sweeps have touched, hand-dotted.
 	for p in data.get("charted", []):
@@ -191,11 +194,7 @@ func _draw() -> void:
 
 	# The dock: home.
 	var dk := _p(data.get("dock", Vector3.ZERO))
-	draw_line(dk + Vector2(-5, 0), dk + Vector2(5, 0), _ink(0.95), 1.4)
-	draw_line(dk + Vector2(0, -5), dk + Vector2(0, 5), _ink(0.95), 1.4)
-	if _big:
-		draw_string(ThemeDB.fallback_font, dk + Vector2(7, 3), "DOCK",
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 12, _ink(0.95))
+	_marker(dk, 5.0, "DOCK", 12, Vector2(7, 3), _big)
 
 	# Deck B: a second hand-copy sheet, inked only after the umbilical has been
 	# crossed. It shares the same visited dictionary, so the room appears when

@@ -181,7 +181,9 @@ static func _subdivide(mesh: Mesh, target: float, max_tris: int) -> ArrayMesh:
 		while not stack.is_empty():
 			var tri: Vector3i = stack.pop_back()
 			if indices.size() / 3 >= max_tris:
-				indices.append_array([tri.x, tri.y, tri.z])
+				indices.append(tri.x)
+				indices.append(tri.y)
+				indices.append(tri.z)
 				continue
 			var a := pos[tri.x]
 			var b := pos[tri.y]
@@ -205,7 +207,9 @@ static func _subdivide(mesh: Mesh, target: float, max_tris: int) -> ArrayMesh:
 					stack.append(Vector3i(tri.x, tri.y, mid))
 					stack.append(Vector3i(mid, tri.y, tri.z))
 			else:
-				indices.append_array([tri.x, tri.y, tri.z])
+				indices.append(tri.x)
+				indices.append(tri.y)
+				indices.append(tri.z)
 
 		var out_arrays: Array = []
 		out_arrays.resize(Mesh.ARRAY_MAX)

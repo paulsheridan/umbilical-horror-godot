@@ -4,16 +4,17 @@ Run this after M7+M5+M6b+M6c (current build). The vertical slice covers:
 
 radar + stills sortie → flashlight add-on run → spur salvage of the **video module** →
 install (live feed unlocked) → first live-feed sortie →
-**the Cold Hold crossing** (four hunters wake, the Collector is consumed once,
+**the Cold Hold crossing** (four watchers wake, the Collector is consumed once,
 the crawler arms) → the lit side hall opens into **Deck C**, a dark engine room
-with a live Stalker and low machinery hides → a real loss only if a hunter
-earns it (wreck + stills recovery) → refit (live feed returns) → free sorties. The ship now includes the
-**east annex**: a donut corridor around a large cafeteria, with two mouths back
-into the junction, the **berth wing**: three loud-doored cabins, lofted bunks,
-a drone-only service crawl, and the Collector's ossuary, the **Processor
-wing**: a long dark hall ending in the feed chamber where a pinned giant mouth
-eats what the Collector brings it, and **Deck B / the Cold Hold**: an 8 m
-umbilical into a pitch-black 50 x 25 m hold with a relay and a side hall.
+with a live Stalker and low machinery hides → a real loss only if a watcher is
+driven into (wreck + stills recovery) → refit (live feed returns) → free
+sorties. The ship now includes the **east annex**: a donut corridor around a
+large cafeteria, with two mouths back into the junction, the **berth wing**:
+three loud-doored cabins, lofted bunks, a drone-only service crawl, and the
+Collector's ossuary, the **Processor wing**: a long dark hall ending in the
+feed chamber where a pinned giant mouth eats what the Collector brings it, and
+**Deck B / the Cold Hold**: an 8 m umbilical into a pitch-black 50 x 25 m hold
+with a relay and a side hall.
 
 Every drone carries the **still camera** from the first launch. The recovered
 video module unlocks the **live drone feed** on later sorties; the radar keeps
@@ -46,17 +47,17 @@ room". Watch for:
 3. **The galley door.** Does the grind read as *cost*? The room behind it is
    empty, and Deck A is deliberately threat-free: the sound should still make
    them pause and listen because the ship feels occupied.
-4. **Deck B escalation.** One noise should only make a hunter stop and listen.
+4. **Deck B escalation.** One noise should only make a watcher stop and listen.
    Does the player notice that distinction? Do they keep driving through it
    and trigger the hunt, or do they freeze? A second noise should produce a
    slow, visibly uncertain search — not a beeline.
 5. **Stillness = safety.** Does anyone discover the halt rule organically
-   (stop moving, a hunter loses sight outside its short still radius)? Note
+   (stop moving, a watcher loses sight outside its short still radius)? Note
    where and how — that's the thesis moment. After a stalk, do they try
-   stopping or turning a corner, and does the hunter search the last place they
-   moved and then give up instead of camping forever? Watch for players who
-   never realise a stationary drone is invisible; the "stop and it walks past"
-   beat is the one to test hardest.
+   stopping or turning a corner, and does the watcher search the last place
+   they moved and then give up instead of camping forever? Watch for players
+   who never realise a stationary drone is invisible; the "stop and it walks
+   past" beat is the one to test hardest.
 6. **The still camera, then the live feed.** Before the module, there is no
    live video; a large black-lens optics window fills the desktop with a small
    radar beside it. Do they understand the shutter? (Bar in the optics window,
@@ -83,15 +84,17 @@ room". Watch for:
    continues on a survivor? If they never deploy or swap, the control hint or
    the second LED is too quiet.
 8. **The Cold Hold crossing.** The junction's north airlock opens onto the
-   umbilical. On the first active-drone crossing, four hunters wake 20+ m out,
+   umbilical. On the first active-drone crossing, four watchers wake 20+ m out,
    the Collector feeds itself to the Processor, and the crawler arms in the
    side hall. Do they notice the deck stencil, the light dying behind them, and
    the relay label change? Does the hold read as dark and open without an
    instant threshold kill?
-   - **The hunters:** can they read a body in the lamp before it reaches them,
-     and do the wet steps/breathing/radar give them a direction? When they break
-     line of sight or stop outside the short still radius, does the hunter
-     search and give up instead of tracking an invisible coordinate?
+   - **The watchers:** can they read a body in the lamp before it reaches them,
+     and do the wet steps/breathing/radar give them a direction? Do they plant
+     at the stand-off and hold it, and do they stay planted when the player
+     approaches? When they break line of sight or stop outside the short still
+     radius, does the watcher search and give up instead of tracking an
+     invisible coordinate?
    - **The sacrifice:** do they see or hear the Collector go — lantern
      guttering, sack dragging, wet crunch through the hull? Is the Processor
      visibly inert afterwards, and do the empty lantern/sack on the deck read as
@@ -107,7 +110,7 @@ room". Watch for:
      machinery pockets? Drive under one, stop moving, and check whether it
      loses them and searches. Confirm the `ENGINE` relay label and that the
      room is inside the tether.
-   - **Real loss only:** if a hunter catches the module chassis, the line we
+   - **Real loss only:** if a watcher takes the module chassis, the line we
      want, unprompted, is some version of *"wait, can I go back for it?"*
      Confirm the wreck left behind does **not** block the corridor, and that
      the still camera and radar remain so the recovery run is not blind.
@@ -139,10 +142,10 @@ The annex is deliberately larger than the old spur. Watch specifically for:
   line?
 - **Tether.** Does the far annex corner (~34 m) ever read as "I am about to
   be cut off"? The tether warning should bite before the hard stop.
-- **Do not expect a hunter on Deck A.** The Collector scavenger and the pinned
+- **Do not expect a watcher on Deck A.** The Collector scavenger and the pinned
   Processor are the only bodies out here. The annex is room, not another chase
   unless you bring a body close enough to wake the scavenger's attention; the
-  Processor is a place, not a patrol. The four hunters are beyond the north
+  Processor is a place, not a patrol. The four watchers are beyond the north
   airlock.
 
 ## The berth wing and the Collector (new since the last gate)
@@ -217,7 +220,7 @@ screens both surface **PSX LOOK**.
   still frame?).
 - Any "this is unfair" moment: distinguish *the game lied* (fix the system)
   from *the game is scarce* (keep it).
-- Audio balance on their hardware: can they hear a Cold Hold hunter over the
+- Audio balance on their hardware: can they hear a Cold Hold watcher over the
   motor at 50% system volume?
 - "Why is the screen black?" between photographs (that's the point; they
   should discover LMB/F from the hint and the shutter bar unprompted). Note
@@ -228,7 +231,7 @@ screens both surface **PSX LOOK**.
   if a real catch takes it actually stings.
 - Whether the radar window stays legible enough to navigate by after the feed
   comes online.
-- Did they hide under a low table or a bunk? Did a Deck B hunter lose them, or
+- Did they hide under a low table or a bunk? Did a Deck B watcher lose them, or
   hear them moving through the hull? Did the state/audio make them stop?
 - Did they deploy a second bot with B? Did the extra chassis read as a tool
   (lookout, bait, relay) or did they forget it existed? If a bot was caught,
@@ -254,7 +257,8 @@ screens both surface **PSX LOOK**.
 - Host `HEARING_MULT`, `ESCALATE_DELAY`, `HUNT_*`, `SIGHT_*`, `STALK_*`
   speeds/distances, `MOVE_THRESH` (what counts as visible motion),
   `LOSE_SIGHT_TIME`
-- **Cold Hold hunters** (`host.configure_aggressive()`): `sight_range` (21),
+- **Cold Hold watchers** (`src/host/watcher.gd`, which also uses
+  `configure_aggressive()`): `WATCH_STANDOFF` (6.8), `sight_range` (21),
   `sight_fov` (105°), `move_thresh` (0.12), `still_sight_range` (5),
   `hearing_mult` (28), `loud_escalate` (0.62), `w_patrol/w_hunt/w_stalk`
   (1.4/2.0/2.6), `hunt_patience` (20 s), `hunt_error_*` (0.5–1.4)
@@ -309,7 +313,7 @@ screens both surface **PSX LOOK**.
 - The still camera reads as evidence, not a broken video feed: black lens,
   slow recharge, frozen grain.
 - The first Cold Hold crossing produces a dark, open, escapable hold, four
-  hunters that do not instantly kill at the threshold, a one-shot Collector
+  watchers that do not instantly kill at the threshold, a one-shot Collector
   sacrifice, and a readable crawler beat.
 - A real module loss produces the "go back for it" reflex without making the
   player think they have gone blind.

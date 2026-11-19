@@ -11,6 +11,7 @@ const PALETTES := [0, 256, 16]
 
 var _sync := false
 var _preset: OptionButton
+var _preset_names: Array = []   # ids the list was built from, so _refresh can skip it
 var _master: CheckButton
 var _custom_name: LineEdit
 
@@ -80,8 +81,12 @@ func _build() -> void:
 
 	# --- Geometry ---------------------------------------------------------
 	var geom := _group(col, "GEOMETRY")
-	_snap_row(geom)
-	_affine_row(geom)
+	_check_slider_row(geom, "Vertex snap", "snap_pixels", 0.0, 4.0, 0.25,
+			func(on: bool) -> void: PSXLook.set_material_value("snap_pixels", 1.0 if on else 0.0),
+			func(v: float) -> void: PSXLook.set_material_value("snap_pixels", v))
+	_check_slider_row(geom, "Affine textures", "affine", 0.0, 1.0, 0.01,
+			func(on: bool) -> void: PSXLook.set_material_value("affine", 1.0 if on else 0.0),
+			func(v: float) -> void: PSXLook.set_material_value("affine", v))
 	_check_row(geom, "Three-point filter", "three_point", "material")
 	_check_row(geom, "Vertex colours", "vertex_colors", "material")
 	_density_row(geom)
@@ -101,7 +106,9 @@ func _build() -> void:
 	_slider(depth, "Fog begin (m)", 0.0, 100.0, 0.5, "fog_begin", "material")
 	_slider(depth, "Fog end (m)", 0.0, 200.0, 0.5, "fog_end", "material")
 	_color_row(depth, "Fog colour", "fog_color", "material")
-	_draw_row(depth)
+	_check_slider_row(depth, "Draw distance", "draw_distance", 8.0, 120.0, 1.0,
+			func(on: bool) -> void: PSXLook.set_draw_distance(on),
+			func(v: float) -> void: PSXLook.set_draw_distance(PSXLook.draw_distance_on, v))
 
 	# --- Animation --------------------------------------------------------
 	var anim := _group(col, "ANIMATION & MATERIALS")
@@ -173,14 +180,19 @@ func _check_row(parent: Container, text: String, field: String, kind: String) ->
 	parent.add_child(b)
 
 
-func _slider(parent: Container, text: String, lo: float, hi: float, step: float,
-		field: String, kind: String) -> HSlider:
+func _row(parent: Control, label_text: String) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	parent.add_child(row)
 	var label := Label.new()
-	label.text = text
+	label.text = label_text
 	label.custom_minimum_size.x = 190
 	row.add_child(label)
+	return row
+
+
+func _slider(parent: Container, text: String, lo: float, hi: float, step: float,
+		field: String, kind: String) -> HSlider:
+	var row := _row(parent, text)
 	var s := HSlider.new()
 	s.set_meta("psx_field", field)
 	s.min_value = lo
@@ -200,12 +212,7 @@ func _slider(parent: Container, text: String, lo: float, hi: float, step: float,
 
 
 func _color_row(parent: Container, text: String, field: String, kind: String) -> void:
-	var row := HBoxContainer.new()
-	parent.add_child(row)
-	var label := Label.new()
-	label.text = text
-	label.custom_minimum_size.x = 190
-	row.add_child(label)
+	var row := _row(parent, text)
 	var picker := ColorPickerButton.new()
 	picker.set_meta("psx_field", field)
 	picker.edit_alpha = false
@@ -222,12 +229,7 @@ func _color_row(parent: Container, text: String, field: String, kind: String) ->
 
 func _option(parent: Container, text: String, labels: Array, values: Array,
 		apply: Callable) -> OptionButton:
-	var row := HBoxContainer.new()
-	parent.add_child(row)
-	var label := Label.new()
-	label.text = text
-	label.custom_minimum_size.x = 190
-	row.add_child(label)
+	var row := _row(parent, text)
 	var opt := OptionButton.new()
 	opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for i in labels.size():
@@ -241,46 +243,28 @@ func _option(parent: Container, text: String, labels: Array, values: Array,
 	return opt
 
 
-func _snap_row(parent: Container) -> void:
+## A check plus a slider that drive the same field: the box snaps the value on
+## or off, the slider carries the strength. The value guard lives here, so the
+## call sites only say what to set.
+func _check_slider_row(parent: Control, label_text: String, field: String, lo: float,
+		hi: float, step: float, on_toggle: Callable, on_value: Callable) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	parent.add_child(row)
-	var b := _check("Vertex snap", func(on: bool) -> void:
-		PSXLook.set_material_value("snap_pixels", 1.0 if on else 0.0)
-	)
+	var b := _check(label_text, on_toggle)
 	b.custom_minimum_size.x = 210
 	row.add_child(b)
 	var s := HSlider.new()
-	s.set_meta("psx_field", "snap_pixels")
-	s.min_value = 0.0
-	s.max_value = 4.0
-	s.step = 0.25
+	s.set_meta("psx_field", field)
+	s.min_value = lo
+	s.max_value = hi
+	s.step = step
 	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	s.value_changed.connect(func(v: float) -> void:
 		if not _sync:
-			PSXLook.set_material_value("snap_pixels", v)
+			on_value.call(v)
 	)
 	row.add_child(s)
-
-
-func _affine_row(parent: Container) -> void:
-	var row := HBoxContainer.new()
-	parent.add_child(row)
-	var b := _check("Affine textures", func(on: bool) -> void:
-		PSXLook.set_material_value("affine", 1.0 if on else 0.0)
-	)
-	b.custom_minimum_size.x = 210
-	row.add_child(b)
-	var s := HSlider.new()
-	s.set_meta("psx_field", "affine")
-	s.min_value = 0.0
-	s.max_value = 1.0
-	s.step = 0.01
-	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	s.value_changed.connect(func(v: float) -> void:
-		if not _sync:
-			PSXLook.set_material_value("affine", v)
-	)
-	row.add_child(s)
+	return row
 
 
 func _fog_row(parent: Container) -> void:
@@ -291,27 +275,6 @@ func _fog_row(parent: Container) -> void:
 	)
 	b.custom_minimum_size.x = 210
 	row.add_child(b)
-
-
-func _draw_row(parent: Container) -> void:
-	var row := HBoxContainer.new()
-	parent.add_child(row)
-	var b := _check("Draw distance", func(on: bool) -> void:
-		PSXLook.set_draw_distance(on)
-	)
-	b.custom_minimum_size.x = 210
-	row.add_child(b)
-	var s := HSlider.new()
-	s.set_meta("psx_field", "draw_distance")
-	s.min_value = 8.0
-	s.max_value = 120.0
-	s.step = 1.0
-	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	s.value_changed.connect(func(v: float) -> void:
-		if not _sync:
-			PSXLook.set_draw_distance(PSXLook.draw_distance_on, v)
-	)
-	row.add_child(s)
 
 
 func _density_row(parent: Container) -> void:
@@ -334,15 +297,23 @@ func _refresh() -> void:
 	_sync = true
 	_master.set_pressed_no_signal(PSXLook.master)
 
-	_preset.clear()
+	# Renaming the list on every settings change would re-load custom preset
+	# files (preset_title does a load), and a dragged slider ticks dozens of
+	# times a second. Only rebuild when the ids actually changed.
 	var names := PSXLook.preset_names()
+	var want: Array = []
 	var selected := 0
 	for i in names.size():
-		var n: StringName = names[i]
-		_preset.add_item(PSXLook.preset_title(n), i)
-		_preset.set_item_metadata(i, String(n))
-		if String(n) == String(PSXLook.current_preset):
+		want.append(String(names[i]))
+		if String(names[i]) == String(PSXLook.current_preset):
 			selected = i
+	if _preset.item_count == 0 or want != _preset_names:
+		_preset_names = want
+		_preset.clear()
+		for i in names.size():
+			var n: StringName = names[i]
+			_preset.add_item(PSXLook.preset_title(n), i)
+			_preset.set_item_metadata(i, String(n))
 	_preset.select(selected)
 
 	_set_all_checks(self)

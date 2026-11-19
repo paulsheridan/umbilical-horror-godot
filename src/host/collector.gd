@@ -48,6 +48,9 @@ const BOT_CARRY_Z := -0.55
 ## body's ground speed gives the heavy, plodding shamble the Collector wants.
 const WALK_ANIM_SPEED := 0.9
 const ANIM_BLEND := 0.18
+## The one falling acceleration the ship's bodies share; the Collector is not
+## a rigid body, so gravity is applied by hand in the physics tick.
+const GRAVITY := 12.0
 
 ## How the Collector reads the player. A body or chassis is acquired as
 ## `target` out to HEAD_TRACK_RANGE and watched whenever it has line of sight.
@@ -105,7 +108,7 @@ class BendModifier extends SkeletonModifier3D:
 	var head := -1
 	var weight := 0.0
 
-	func _process_modification() -> void:
+	func _process_modification_with_delta(_delta: float) -> void:
 		if weight <= 0.001:
 			return
 		var sk := get_skeleton()
@@ -146,6 +149,11 @@ var radar_blips := false
 var player_body: Node3D = null
 var player_target: Node3D = null
 var target: Node3D = null
+## The resolved "Head" child of `target`. The string lookup would otherwise run
+## two or three times a physics frame while a player is watched (sight, look
+## and every spray droplet), so it is cached here and re-resolved only when the
+## target changes or the node dies. Null means the target has no Head child.
+var _target_head: Node3D = null
 var pursuing := false
 ## True only while `_pursue` is actively moving toward the target to pick it
 ## up. Body facing follows the target during that movement and during a
@@ -253,8 +261,9 @@ func _build_look() -> void:
 	_look.use_secondary_rotation = true
 	_look.use_angle_limitation = true
 	_look.symmetry_limitation = true
-	_look.primary_limit_angle = 70.0
-	_look.secondary_limit_angle = 35.0
+	# The look limits are authored in degrees but the modifier takes radians.
+	_look.primary_limit_angle = deg_to_rad(70.0)
+	_look.secondary_limit_angle = deg_to_rad(35.0)
 	_look.duration = 0.22
 	_look.influence = 0.0
 	_skeleton.add_child(_look)
@@ -339,6 +348,11 @@ func begin_sacrifice(at: Vector3) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# ESC pause freezes the drone; a Collector that kept walking, carrying or
+	# spitting behind the veil would break the freeze and bank a stale frame's
+	# timers into the unpause tick, so the body sleeps with the pilot too.
+	if GameState.paused:
+		return
 	_moving_to_pickup = false
 	_turning_to_target = false
 	if consumed:
@@ -347,7 +361,7 @@ func _physics_process(delta: float) -> void:
 	if sacrificing:
 		_sacrifice_tick(delta)
 		if not is_on_floor():
-			velocity.y -= 12.0 * delta
+			velocity.y -= GRAVITY * delta
 		move_and_slide()
 		_face(delta)
 		_animate(delta)
@@ -371,7 +385,7 @@ func _physics_process(delta: float) -> void:
 		_halt()
 		_face_target(delta)
 		if not is_on_floor():
-			velocity.y -= 12.0 * delta
+			velocity.y -= GRAVITY * delta
 		move_and_slide()
 		_animate(delta)
 		return
@@ -382,7 +396,7 @@ func _physics_process(delta: float) -> void:
 	if _ground_vomit_t > 0.0:
 		_ground_vomit_tick(delta)
 		if not is_on_floor():
-			velocity.y -= 12.0 * delta
+			velocity.y -= GRAVITY * delta
 		move_and_slide()
 		_face(delta)
 		_animate(delta)
@@ -447,9 +461,12 @@ func _physics_process(delta: float) -> void:
 	if in_spray and _vomit_t <= 0.0 and _vomit_cd <= 0.0:
 		_start_vomit()
 	if not is_on_floor():
-		velocity.y -= 12.0 * delta
+		velocity.y -= GRAVITY * delta
 	move_and_slide()
-	if not pursuing:
+	# `_pursue` runs its own watchdog, but a busy delivery suppresses the
+	# chase entirely: without this the wedge check would be off for the whole
+	# carry leg, so a wedged delivery would never reroute.
+	if not pursuing or busy:
 		_check_stuck(delta)
 	# An active pickup approach and a mid-range spray both turn the body onto
 	# the target. Every other beat (route walking, resting, carrying, standing
@@ -646,6 +663,8 @@ func _update_target(_delta: float) -> void:
 			_pursuit_stuck_t = 0.0
 		return
 	target = _find_nearest_target()
+	# A new fixation invalidates the cached head; the first aim re-resolves it.
+	_target_head = null
 	if target != null:
 		_pursuit_last = global_position
 		_pursuit_stuck_t = 0.0
@@ -656,24 +675,33 @@ func _update_target(_delta: float) -> void:
 func _find_nearest_target() -> Node3D:
 	var best: Node3D = null
 	var best_d := HEAD_TRACK_RANGE
-	var candidates := [player_body, player_target]
-	for candidate in candidates:
-		if candidate == null or not is_instance_valid(candidate):
-			continue
-		var body := candidate as Node3D
-		if body == null:
-			continue
-		if body.get("carried") == true:
-			continue
-		var d := _flat_dist(body.global_position)
+	# The two references are tested directly instead of via a fresh array: this
+	# runs every physics frame while the Collector has no target, which is most
+	# of the loop, so the array was pure per-frame garbage.
+	if _targetable(player_body):
+		var d := _flat_dist(player_body.global_position)
 		if d < best_d:
 			best_d = d
-			best = body
+			best = player_body
+	if _targetable(player_target):
+		var d := _flat_dist(player_target.global_position)
+		# Strict `<` against the running best: player_body is tested first, so
+		# it keeps its precedence on an exact tie.
+		if d < best_d:
+			best = player_target
 	return best
+
+
+## A candidate only counts while it is a live, un-carried body. `get` returns
+## null for a node without the property, which is not `true` and so passes.
+func _targetable(candidate: Node3D) -> bool:
+	return candidate != null and is_instance_valid(candidate) \
+			and candidate.get("carried") != true
 
 
 func _clear_target() -> void:
 	target = null
+	_target_head = null
 	pursuing = false
 	_vomit_t = 0.0
 	_spray_next = 0.0
@@ -724,9 +752,10 @@ func _has_line_of_sight() -> bool:
 func _target_aim_point() -> Vector3:
 	if target == null or not is_instance_valid(target):
 		return global_position + Vector3.UP * 1.4
-	var head := target.get_node_or_null("Head") as Node3D
-	if head != null:
-		return head.global_position
+	if _target_head == null or not is_instance_valid(_target_head):
+		_target_head = target.get_node_or_null("Head") as Node3D
+	if _target_head != null:
+		return _target_head.global_position
 	return target.global_position + Vector3.UP * 0.8
 
 
@@ -784,18 +813,30 @@ func _spawn_spray() -> void:
 			randf_range(-SPRAY_SPREAD * 0.6, SPRAY_SPREAD * 0.6),
 			randf_range(-SPRAY_SPREAD, SPRAY_SPREAD))
 	var flight := randf_range(SPRAY_FLIGHT_MIN, SPRAY_FLIGHT_MAX)
-	var velocity := (to - from) / flight
-	velocity.y += 0.5 * SPRAY_GRAVITY * flight
+	_launch_glob(from, to, flight, SPRAY_SIZE_MIN, SPRAY_SIZE_MAX,
+			Vector2(0.15, 0.45))
+	vomit_drops += 1
+
+
+## The shared launch for both sprays: aim point, airtime and size range in, one
+## ballistic glob out. The attack and the ground beat differ only in those
+## numbers, so the arc maths, parenting and PSX conversion live here once.
+## `life_extra` is the random extra life added to `flight` on the droplet's
+## self-free timer, so a glob always outlives its own arc and never clips out
+## mid-air. The droplet frees itself: no puddle or collision is left behind.
+func _launch_glob(from: Vector3, to: Vector3, flight: float,
+		size_min: float, size_max: float, life_extra: Vector2) -> void:
 	var parent := get_parent()
 	if parent == null:
 		return
+	var velocity := (to - from) / flight
+	velocity.y += 0.5 * SPRAY_GRAVITY * flight
 	var glob = VOMIT_SCENE.instantiate()
 	parent.add_child(glob)
-	glob.spray(from, velocity, flight + randf_range(0.15, 0.45),
-			randf_range(SPRAY_SIZE_MIN, SPRAY_SIZE_MAX))
+	glob.spray(from, velocity, flight + randf_range(life_extra.x, life_extra.y),
+			randf_range(size_min, size_max))
 	if PSXLook.has_method("convert_subtree"):
 		PSXLook.convert_subtree(glob)
-	vomit_drops += 1
 
 
 # --------------------------------------------------------------------------
@@ -866,12 +907,9 @@ func _ground_vomit_tick(delta: float) -> void:
 
 ## One glob of the ground arc. The Collector is facing its travel direction, so
 ## the spill is aimed at a point on the deck just ahead of the feet, never at
-## the player. Parenting and PSX conversion mirror the attack spray exactly;
-## the droplet frees itself, so no puddle or collision is left behind.
+## the player. The launch itself is the shared one; only the aim, the slower
+## flight and the smaller droplets belong to the ground beat.
 func _spawn_ground_vomit() -> void:
-	var parent := get_parent()
-	if parent == null:
-		return
 	var forward := -global_transform.basis.z
 	forward.y = 0.0
 	if forward.length() < 0.01:
@@ -884,14 +922,8 @@ func _spawn_ground_vomit() -> void:
 			randf_range(-GROUND_SPRAY_SPREAD, GROUND_SPRAY_SPREAD))
 	var from := _mouth_position()
 	var flight := GROUND_SPRAY_FLIGHT * randf_range(0.85, 1.15)
-	var velocity := (to - from) / flight
-	velocity.y += 0.5 * SPRAY_GRAVITY * flight
-	var glob = VOMIT_SCENE.instantiate()
-	parent.add_child(glob)
-	glob.spray(from, velocity, flight + randf_range(0.05, 0.18),
-			randf_range(GROUND_SPRAY_SIZE_MIN, GROUND_SPRAY_SIZE_MAX))
-	if PSXLook.has_method("convert_subtree"):
-		PSXLook.convert_subtree(glob)
+	_launch_glob(from, to, flight, GROUND_SPRAY_SIZE_MIN, GROUND_SPRAY_SIZE_MAX,
+			Vector2(0.05, 0.18))
 	ground_vomit_drops += 1
 
 

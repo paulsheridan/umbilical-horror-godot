@@ -9,6 +9,7 @@ const SWEEP_TIME := 2.4      # seconds per revolution
 const ECHO_LIFE := 20.0
 const BLIP_LIFE := 6.0
 const MAX_ECHOES := 600
+const RING_METERS := [5.0, 10.0, 15.0]   # range rings, hoisted so _draw allocates none
 
 ## Emitted for every actual wall return (already deduped locally). Main uses
 ## this to chart the ship permanently onto the map table.
@@ -46,8 +47,13 @@ func _on_noise(position: Vector3, loudness: float, source: Node = null) -> void:
 
 func _add_echo(position: Vector3) -> void:
 	# Damp duplicates: the same wall face swept at high fps must not spam.
-	for e in echoes:
-		if float(e["t"]) < 1.0 and (e["pos"] as Vector3).distance_to(position) < 0.5:
+	# Ages are ordered (youngest at the tail), so scan back and bail once a
+	# stale entry proves nothing younger can match.
+	for i in range(echoes.size() - 1, -1, -1):
+		var e: Dictionary = echoes[i]
+		if float(e["t"]) >= 1.0:
+			break
+		if (e["pos"] as Vector3).distance_to(position) < 0.5:
 			return
 	echoes.append({"pos": position, "t": 0.0})
 	echo_recorded.emit(position)
@@ -87,11 +93,14 @@ func _process(delta: float) -> void:
 			_add_echo(hit.position)
 	for e in echoes:
 		e["t"] = float(e["t"]) + delta
-	echoes = echoes.filter(func(e): return float(e["t"]) < ECHO_LIFE)
+	for i in range(echoes.size() - 1, -1, -1):
+		if float(echoes[i]["t"]) >= ECHO_LIFE:
+			echoes.remove_at(i)
 	for b in blips:
 		b["t"] = float(b["t"]) + delta
-	blips = blips.filter(func(b): return float(b["t"]) < BLIP_LIFE)
-	masses = masses.filter(func(m): return is_instance_valid(m["node"]))
+	for i in range(blips.size() - 1, -1, -1):
+		if float(blips[i]["t"]) >= BLIP_LIFE:
+			blips.remove_at(i)
 	queue_redraw()
 
 
@@ -104,7 +113,7 @@ func _draw() -> void:
 	draw_rect(Rect2(0, 0, size.x, size.y), Color(0.0, 0.015, 0.008, 0.78))
 	draw_circle(c, r, Color(0.008, 0.05, 0.03, 0.92))
 	draw_arc(c, r, 0.0, TAU, 72, Color(0.25, 0.7, 0.4, 0.5), 1.2)
-	for ring_m in [5.0, 10.0, 15.0]:
+	for ring_m in RING_METERS:
 		var rr: float = ring_m * ppm
 		if rr < r:
 			draw_arc(c, rr, 0.0, TAU, 64, Color(0.25, 0.7, 0.4, 0.16), 1.0)

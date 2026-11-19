@@ -10,6 +10,10 @@ extends RefCounted
 
 const Mats := preload("res://src/mats.gd")
 
+## A CSG cylinder's axis is Y; a quarter turn about X lays it along Z. Every
+## barrel, lens ring and camcorder lens stack in here is that same rotation.
+const CYL_ALONG_X := Vector3(PI * 0.5, 0.0, 0.0)
+
 const FLASHLIGHT_GLOW := Color(1.0, 0.78, 0.34)
 const CAMERA_GLOW := Color(0.48, 0.90, 1.0)
 const DIM_GLOW := Color(1.0, 0.48, 0.16)
@@ -40,17 +44,17 @@ static func flashlight_model(bright := false) -> Node3D:
 
 	# Barrel lies along -Z; the lens is its bright front face.
 	root.add_child(_cyl(0.045, 0.24, Vector3(0.0, 0.0, 0.0), main,
-			Vector3(PI * 0.5, 0.0, 0.0), 8))
+			CYL_ALONG_X, 8))
 	root.add_child(_cyl(0.062, 0.07, Vector3(0.0, 0.0, -0.145), main,
-			Vector3(PI * 0.5, 0.0, 0.0), 8))
+			CYL_ALONG_X, 8))
 	root.add_child(_cyl(0.066, 0.018, Vector3(0.0, 0.0, -0.178), trim,
-			Vector3(PI * 0.5, 0.0, 0.0), 8))
+			CYL_ALONG_X, 8))
 	root.add_child(_cyl(0.048, 0.012, Vector3(0.0, 0.0, -0.188), lens,
-			Vector3(PI * 0.5, 0.0, 0.0), 8))
+			CYL_ALONG_X, 8))
 	root.add_child(_cyl(0.05, 0.026, Vector3(0.0, 0.0, 0.058), trim,
-			Vector3(PI * 0.5, 0.0, 0.0), 8))
+			CYL_ALONG_X, 8))
 	root.add_child(_cyl(0.047, 0.028, Vector3(0.0, 0.0, 0.128), trim,
-			Vector3(PI * 0.5, 0.0, 0.0), 8))
+			CYL_ALONG_X, 8))
 	root.add_child(_box(Vector3(0.022, 0.018, 0.05),
 			Vector3(0.05, 0.012, 0.015), lens))
 	return root
@@ -68,11 +72,11 @@ static func camera_model(bright := false) -> Node3D:
 	root.add_child(_box(Vector3(0.21, 0.13, 0.15), Vector3(0.0, 0.0, 0.01), main))
 	root.add_child(_box(Vector3(0.06, 0.15, 0.11), Vector3(0.115, -0.005, 0.02), trim))
 	root.add_child(_cyl(0.064, 0.075, Vector3(0.0, 0.0, -0.10), main,
-			Vector3(PI * 0.5, 0.0, 0.0), 10))
+			CYL_ALONG_X, 10))
 	root.add_child(_cyl(0.082, 0.028, Vector3(0.0, 0.0, -0.145), trim,
-			Vector3(PI * 0.5, 0.0, 0.0), 10))
+			CYL_ALONG_X, 10))
 	root.add_child(_cyl(0.055, 0.012, Vector3(0.0, 0.0, -0.162), lens,
-			Vector3(PI * 0.5, 0.0, 0.0), 10))
+			CYL_ALONG_X, 10))
 	root.add_child(_box(Vector3(0.05, 0.032, 0.10), Vector3(0.0, 0.087, 0.01), trim))
 	root.add_child(_box(Vector3(0.014, 0.045, 0.014), Vector3(-0.035, 0.065, 0.01), main))
 	root.add_child(_box(Vector3(0.014, 0.045, 0.014), Vector3(0.035, 0.065, 0.01), main))

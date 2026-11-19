@@ -789,7 +789,7 @@ func _run() -> void:
 	_check(main.hud._shutter_frac >= 0.0 and main.hud._shutter_frac <= 1.0,
 			"shutter meter reads in range")
 
-	# --- M7: Deck B — airlock / relay / hunters / sacrifice -------------------
+	# --- M7: Deck B — airlock / relay / watchers / sacrifice ------------------
 	_check(main._act_stage == 1, "video module aboard: no authored loss is armed")
 	_check(main.hosts.size() == 1, "only the temporary probe body exists before Deck B")
 	main.hosts.erase(patroller)
@@ -840,7 +840,7 @@ func _run() -> void:
 	_check(main._zone2_entered, "the first crossing arms Deck B")
 	_check(main.drone != null and GameState.sortie == GameState.Sortie.PILOTING,
 			"crossing the threshold is not an instant kill")
-	_check(main.hosts.size() == 4, "four hunters wake in the Cold Hold")
+	_check(main.hosts.size() == 4, "four watchers wake in the Cold Hold")
 	_check(main._zone2_beat_shown and main.hud._zone_beat.text == "DECK B",
 			"the zone beat is a bare deck label")
 	_check(main._live_feed_active() and main.hud._live.visible,
@@ -858,7 +858,7 @@ func _run() -> void:
 				and absf(h.hearing_mult - 28.0) < 0.01 \
 				and h.w_patrol < h.w_hunt and h.w_hunt < h.w_stalk \
 				and absf(h.hunt_patience - 20.0) < 0.01
-	_check(aggressive_ok, "all four hunters use the aggressive Deck B profile")
+	_check(aggressive_ok, "all four watchers use the aggressive Deck B profile")
 
 	_check(main.drone.anchor_pos.distance_to(main.ship.zone2_relay) < 0.001,
 			"the active chassis tethers to the relay")
@@ -897,14 +897,14 @@ func _run() -> void:
 			"re-entering does not repeat the spawn or the meal")
 
 	# The side hall is a one-shot, and it yields the drone no matter what.
-	# A hunter *inside* the hall defers the beat rather than competing; one
+	# A watcher *inside* the hall defers the beat rather than competing; one
 	# patrolling the open hold near the mouth must not suppress it (that was
 	# the trigger bug).
 	var defer_host = main.hosts[0]
 	defer_host.drone = null
 	defer_host.global_position = main.ship.crawler_grab + Vector3(0.0, 0.0, 1.0)
 	main._try_start_crawler(main.ship.crawler_setpiece)
-	_check(main.crawler == null, "a hunter at the crawl origin defers the crawler")
+	_check(main.crawler == null, "a watcher at the crawl origin defers the crawler")
 	defer_host.global_position = main.ship.crawler_setpiece + Vector3(0.0, 0.0, -2.5)
 	defer_host.state = defer_host.State.PATROL
 	for h in main.hosts:
@@ -917,7 +917,7 @@ func _run() -> void:
 	for _i in 12:
 		await get_tree().physics_frame
 	_check(main.crawler != null and main.crawler.active,
-			"the crawler arms at the side-hall entrance even with a hunter near the mouth")
+			"the crawler arms at the side-hall entrance even with a watcher near the mouth")
 	_check(main.hud._subtitle.text != "", "the crawler gets a subtitle channel")
 	main.drone.global_position = main.ship.crawler_setpiece + Vector3(-11.0, 0.12, -8.0)
 	main.drone.velocity = Vector3.ZERO
@@ -931,7 +931,7 @@ func _run() -> void:
 	_check(debug_line.begins_with("enemies 5  zone2 hosts 4") and debug_line.contains("nearest"),
 			"F3 reports the hostile roster (%s)" % debug_line)
 	_check(main._nearest_host(main.drone.global_position) != null,
-			"F3 can name the nearest hunter")
+			"F3 can name the nearest body")
 
 	# --- Deck C: engine room, relay and its Stalker ------------------------
 	_check(main.stalker != null and is_instance_valid(main.stalker),

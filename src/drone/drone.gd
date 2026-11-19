@@ -10,7 +10,6 @@ extends CharacterBody3D
 ## recovered add-on: a narrow SpotLight3D on a sprung mount that lags and kicks
 ## when the crawler starts, stops or turns, instead of god-lighting the room.
 
-signal feed_message(text: String)
 signal battery_dead
 
 const MAX_TETHER := 36.0
@@ -45,6 +44,9 @@ var controlled := false
 ## Set true to restore the live feed.
 var live_view := false
 var battery := 100.0
+# Battery is a one-way trip: emit the dead signal on the transition only, not
+# every physics frame once the charge sits at zero.
+var _battery_dead_fired := false
 var anchor_pos := Vector3.ZERO
 var dock_pos := Vector3.ZERO
 var cam: Camera3D
@@ -109,8 +111,7 @@ func set_flashlight(on: bool) -> void:
 		_fl_prev_speed = 0.0
 		_fl_prev_yaw_rate = 0.0
 	else:
-		_fl_aim = Vector2.ZERO
-		_fl_vel = Vector2.ZERO
+		_fl_reset_spring()
 		_fl_prev_yaw_rate = 0.0
 
 
@@ -136,10 +137,16 @@ func _apply_flashlight_state() -> void:
 	if lamp != null:
 		lamp.light_energy = 0.0 if lit else 0.42
 	if not lit:
-		_fl_aim = Vector2.ZERO
-		_fl_vel = Vector2.ZERO
-		if flashlight_pivot != null:
-			flashlight_pivot.rotation = Vector3.ZERO
+		_fl_reset_spring()
+
+
+## Park the beam: kill any stored aim and offset. Shared by every "light is
+## off / link is down" path so the mount always returns to dead centre.
+func _fl_reset_spring() -> void:
+	_fl_aim = Vector2.ZERO
+	_fl_vel = Vector2.ZERO
+	if flashlight_pivot != null:
+		flashlight_pivot.rotation = Vector3.ZERO
 
 func set_controlled(on: bool) -> void:
 	controlled = on
@@ -147,10 +154,7 @@ func set_controlled(on: bool) -> void:
 	_fl_prev_yaw = rotation.y
 	_fl_prev_yaw_rate = 0.0
 	if not on:
-		_fl_aim = Vector2.ZERO
-		_fl_vel = Vector2.ZERO
-		if flashlight_pivot != null:
-			flashlight_pivot.rotation = Vector3.ZERO
+		_fl_reset_spring()
 	if on:
 		if live_view:
 			cam.make_current()
@@ -193,7 +197,8 @@ func _physics_process(delta: float) -> void:
 		return
 
 	battery = maxf(battery - BATTERY_RATE * delta, 0.0)
-	if battery <= 0.0:
+	if battery <= 0.0 and not _battery_dead_fired:
+		_battery_dead_fired = true
 		battery_dead.emit()
 
 	cam.rotation.x = 0.0
@@ -217,11 +222,14 @@ func _physics_process(delta: float) -> void:
 	_scrape_cd = maxf(_scrape_cd - delta, 0.0)
 	_check_scrapes()
 	_tether()
-	_motor_noise(delta)
-	_flashlight_motion(delta)
+	# One horizontal-speed read per frame, taken after the tether settles the
+	# velocity. Motor volume, motor noise and the lamp spring all share it.
+	var hspeed := Vector2(velocity.x, velocity.z).length()
+	_motor_noise(delta, hspeed)
+	_flashlight_motion(delta, hspeed)
 
 	if motor != null:
-		var norm := Vector2(velocity.x, velocity.z).length() / HURRY_SPEED
+		var norm := hspeed / HURRY_SPEED
 		motor.volume_db = lerpf(motor.volume_db, -30.0 + norm * 14.0,
 				minf(delta * 8.0, 1.0))
 		# Load feedback: the crawler labors as it hurries. The pitch lags the
@@ -234,11 +242,10 @@ func _physics_process(delta: float) -> void:
 ## The flashlight has inertia. Spring the beam back to centre and inject small
 ## impulses when the crawler gets rolling, brakes, or starts/stops a turn. The
 ## offset is visible but bounded: a hand-held lamp, not a broken gimbal.
-func _flashlight_motion(delta: float) -> void:
+func _flashlight_motion(delta: float, speed: float) -> void:
 	if flashlight_pivot == null or not flashlight_installed or not flashlight_on \
 			or delta <= 0.0:
 		return
-	var speed := Vector2(velocity.x, velocity.z).length()
 	var yaw := rotation.y
 	var yaw_delta := wrapf(yaw - _fl_prev_yaw, -PI, PI)
 	var yaw_rate := yaw_delta / delta
@@ -281,9 +288,8 @@ func _flashlight_motion(delta: float) -> void:
 ## Continuous motor presence: while the crawler is actually rolling it posts a
 ## soft noise pulse. Stop moving and the pulse stops, which is the player's
 ## main lever against the new hearing model. Wall scrapes remain louder.
-func _motor_noise(delta: float) -> void:
+func _motor_noise(delta: float, hspeed: float) -> void:
 	_motor_noise_t = maxf(_motor_noise_t - delta, 0.0)
-	var hspeed := Vector2(velocity.x, velocity.z).length()
 	if hspeed < 0.3 or _motor_noise_t > 0.0:
 		return
 	_motor_noise_t = MOTOR_NOISE_INTERVAL

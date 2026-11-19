@@ -116,6 +116,8 @@ var engine_stalker_spawn := Vector3(30.5, 0.2, -86.5)
 const ZONE2_DOOR_CLOSED_Y := 1.1
 const ZONE2_DOOR_OPEN_Y := 3.42
 const ZONE2_DOOR_SPEED := 1.6
+## Cabin panels are light; they slide about twice as fast as the galley door.
+const LOUD_DOOR_SPEED := 1.7
 
 var galley_door: CSGBox3D = null
 var galley_door_open := false
@@ -147,6 +149,9 @@ var _zone2_grind_t := 0.0
 ## Authored hall/engine practicals, gently breathing so the side hall reads as
 ## a place that still has power. Each entry: {node, base, phase}.
 var _practicals: Array = []
+## The one authored light that stutters. Resolved once in _ready: a recursive
+## find_children per frame for a node that never changes was pure waste.
+var _flicker_lamp: OmniLight3D = null
 
 
 ## Main calls this when the drone gets close to the door plane.
@@ -154,6 +159,8 @@ func open_galley_door() -> void:
 	if galley_door_open:
 		return
 	galley_door_open = true
+	if galley_door == null:
+		return
 	Sfx.play("thud", galley_door.global_position, -2.0)
 	NoiseBus.emit_noise(galley_door.global_position, 0.55)
 
@@ -211,6 +218,7 @@ func _ready() -> void:
 	_scan_data(self)
 	# The side hall and engine room are lit by a few weak practicals. They are
 	# authored scene lights, not runtime builders; this only animates them.
+	_flicker_lamp = _resolve("FlickerLight") as OmniLight3D
 	_practicals.clear()
 	var practical_names := [
 		"CrawlerLampA", "CrawlerLampB", "CrawlerLampC",
@@ -286,15 +294,9 @@ func _attach_pickup_fx(root: Node3D, kind: String) -> void:
 	var glow := PickupProps.FLASHLIGHT_GLOW if kind == "flashlight" \
 			else PickupProps.CAMERA_GLOW
 	if root.has_meta("pickup_fx_ready"):
-		var existing := root.get_node_or_null("PickupIndicator")
+		var existing := root.get_node_or_null("PickupIndicator") as Node3D
 		if existing != null:
-			_pickup_fx.append({
-				"root": root,
-				"indicator": existing,
-				"base_y": existing.position.y,
-				"phase": float(_pickup_fx.size()) * 2.1,
-				"lamp": existing.get_node_or_null("Glow"),
-			})
+			_register_pickup_fx(root, existing, existing.get_node_or_null("Glow"))
 		return
 	root.add_child(PickupProps.model(kind))
 	var indicator := PickupProps.indicator(kind, glow)
@@ -303,12 +305,18 @@ func _attach_pickup_fx(root: Node3D, kind: String) -> void:
 	indicator.position = Vector3(0.0, hover, 0.0)
 	root.add_child(indicator)
 	root.set_meta("pickup_fx_ready", true)
+	_register_pickup_fx(root, indicator, indicator.get_node_or_null("Glow"))
+
+
+## Append the bob/spin record for one marker. The phase comes from the current
+## list length, so a re-registered pickup lands in the same slot it always did.
+func _register_pickup_fx(root: Node3D, indicator: Node3D, lamp: Node = null) -> void:
 	_pickup_fx.append({
 		"root": root,
 		"indicator": indicator,
 		"base_y": indicator.position.y,
 		"phase": float(_pickup_fx.size()) * 2.1,
-		"lamp": indicator.get_node_or_null("Glow"),
+		"lamp": lamp,
 	})
 
 
@@ -389,12 +397,11 @@ func _scan_data(node: Node) -> void:
 
 
 func _process(delta: float) -> void:
-	var lamp := _resolve("FlickerLight") as OmniLight3D
-	if lamp != null:
-		var t: float = Time.get_ticks_msec() / 1000.0
-		lamp.light_energy = 0.55 * (0.7 + 0.3 * sin(t * 11.0)) \
-				* (0.15 if sin(t * 3.1) > 0.99 else 1.0)
+	# One clock read for every per-frame animation below.
 	var now: float = Time.get_ticks_msec() / 1000.0
+	if _flicker_lamp != null and is_instance_valid(_flicker_lamp):
+		_flicker_lamp.light_energy = 0.55 * (0.7 + 0.3 * sin(now * 11.0)) \
+				* (0.15 if sin(now * 3.1) > 0.99 else 1.0)
 	for rec in _practicals:
 		var practical: OmniLight3D = rec["node"]
 		if practical == null or not is_instance_valid(practical):
@@ -414,11 +421,8 @@ func _process(delta: float) -> void:
 		if galley_door.position.z != prev.z:
 			# Grinding metal, halfway into the frame: every half-second posts,
 			# so the hosts hear the door long before you wish they had.
-			_door_grind_t -= delta
-			if _door_grind_t <= 0.0:
-				_door_grind_t = 0.45
-				Sfx.play("scrape", galley_door.global_position, -6.0, 0.55)
-				NoiseBus.emit_noise(galley_door.global_position, 0.45)
+			_door_grind_t = _grind_scrape(_door_grind_t, delta, 0.45,
+					galley_door.global_position, -6.0, 0.55, 0.45)
 	if zone2_door != null:
 		var target_y := ZONE2_DOOR_OPEN_Y if zone2_door_open else ZONE2_DOOR_CLOSED_Y
 		var prev_y := zone2_door.position.y
@@ -427,10 +431,23 @@ func _process(delta: float) -> void:
 		if zone2_door.position.y != prev_y:
 			# The airlock only ever opens once; the scrape is the price of
 			# admission, not a recurring tax on every crossing.
-			_zone2_grind_t -= delta
-			if _zone2_grind_t <= 0.0:
-				_zone2_grind_t = 0.4
-				Sfx.play("scrape", zone2_door.global_position, -3.0, 0.5)
+			_zone2_grind_t = _grind_scrape(_zone2_grind_t, delta, 0.4,
+					zone2_door.global_position, -3.0, 0.5)
+
+
+## The shared grind beat for every sliding door: tick the caller's own grind
+## clock and, when it runs out, post exactly one scrape (and the noise event,
+## when the door is loud enough to carry). Returns the new clock value, so each
+## door keeps its own cadence without duplicating this block three times.
+func _grind_scrape(grind_t: float, delta: float, interval: float, pos: Vector3,
+		db: float, pitch: float, loud: float = 0.0, source: Node = null) -> float:
+	grind_t -= delta
+	if grind_t > 0.0:
+		return grind_t
+	Sfx.play("scrape", pos, db, pitch)
+	if loud > 0.0:
+		NoiseBus.emit_noise(pos, loud, source)
+	return interval
 
 
 ## A drone died here. The ship keeps its husk; the video module survives
@@ -496,12 +513,9 @@ func service_doors(pos: Vector3, delta: float, source: Node = null) -> void:
 			continue
 		var target: Vector3 = d["open"]
 		var prev: Vector3 = node.position
-		node.position = node.position.move_toward(target, 1.7 * delta)
+		node.position = node.position.move_toward(target, LOUD_DOOR_SPEED * delta)
 		if node.position != prev:
-			d["grind_t"] = float(d["grind_t"]) - delta
-			if float(d["grind_t"]) <= 0.0:
-				d["grind_t"] = 0.30
-				Sfx.play("scrape", d["trigger"], -2.0, 0.72)
-				NoiseBus.emit_noise(d["trigger"], 0.5, source)
+			d["grind_t"] = _grind_scrape(float(d["grind_t"]), delta, 0.30,
+					d["trigger"], -2.0, 0.72, 0.5, source)
 		if node.position.distance_to(target) < 0.02:
 			d["settled"] = true

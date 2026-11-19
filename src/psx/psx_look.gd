@@ -16,6 +16,10 @@ const DENSITY := preload("res://src/psx/psx_density.gd")
 const SETTINGS := preload("res://src/psx/psx_settings.gd")
 const PRESET_SCRIPT := "res://addons/psx_look/psx_preset.gd"
 const CUSTOM_DIR := "user://psx_presets"
+## A panel slider fires value_changed for every pixel of a drag; the settings
+## file waits this long after the last change instead of being rewritten each
+## time, so one drag is one disk write.
+const SAVE_DEBOUNCE := 0.35
 
 const DEBUG_AMBIENT_ENERGY := 1.35
 const DEBUG_AMBIENT_COLOR := Color(0.92, 0.95, 1.0, 1.0)
@@ -108,6 +112,7 @@ var _zone_dark_target := 0.0
 var _dirty := false
 var _sweep_t := 0.0
 var _custom: Dictionary = {}
+var _save_timer: Timer
 
 
 func _ready() -> void:
@@ -258,7 +263,7 @@ func convert_subtree(node: Node) -> void:
 		var dense := DENSITY.apply(node, density, 18000)
 		if not dense.is_empty():
 			_density_records.append_array(dense)
-	var added := CONVERT.convert_subtree(node, _cache)
+	var added := CONVERT.convert(node, _cache)
 	if added.is_empty():
 		return
 	_entries.append_array(added)
@@ -295,6 +300,9 @@ func set_material_value(key: String, value: Variant) -> void:
 
 
 func set_draw_distance(on: bool, metres: float = -1.0) -> void:
+	if draw_distance_on == on \
+			and (metres < 0.0 or is_equal_approx(draw_distance, metres)):
+		return
 	draw_distance_on = on
 	if metres >= 0.0:
 		draw_distance = metres
@@ -304,6 +312,8 @@ func set_draw_distance(on: bool, metres: float = -1.0) -> void:
 
 
 func set_category(category: String, on: bool) -> void:
+	if category_on(category) == on:
+		return
 	match category:
 		"sprites": sprites = on
 		"flipbooks": flipbooks = on
@@ -424,10 +434,36 @@ func reset_to_defaults(save := true) -> void:
 	settings_changed.emit()
 
 
+## The write is debounced only: a slider drag calls this dozens of times, so the
+## file lands 0.35 s after the last change. Every in-memory value, the applied
+## look and settings_changed are already immediate, so panel behaviour does not
+## change and the saved content is identical, just written once per drag.
 func save_settings() -> void:
 	if not persistence:
 		return
+	if _save_timer == null:
+		_save_timer = Timer.new()
+		_save_timer.one_shot = true
+		_save_timer.wait_time = SAVE_DEBOUNCE
+		_save_timer.process_mode = Node.PROCESS_MODE_ALWAYS
+		_save_timer.timeout.connect(_flush_settings)
+		add_child(_save_timer)
+	_save_timer.start(SAVE_DEBOUNCE)
+
+
+## Writes the pending settings now. Same keys and values as an undebounced save.
+func _flush_settings() -> void:
+	if _save_timer != null and not _save_timer.is_stopped():
+		_save_timer.stop()
 	SETTINGS.save(settings_dict())
+
+
+## The autoload is freed as the tree shuts down, so a write still waiting when
+## the player quits lands here (the window's close request only reaches the root
+## window, never an autoload).
+func _exit_tree() -> void:
+	if _save_timer != null and not _save_timer.is_stopped():
+		_flush_settings()
 
 
 func settings_dict() -> Dictionary:
@@ -743,7 +779,10 @@ func _apply_environment() -> void:
 
 	# PSX depth fog: the materials fog per vertex up to fog_end, the
 	# Environment takes everything else from there, in the same colour, so
-	# polygons pop in against matching sky rather than a hard line.
+	# polygons pop in against matching sky rather than a hard line. This mirrors
+	# PSXPreset.apply (addons/psx_look/psx_preset.gd, its `if environment and
+	# fog:` block): keep the two in step, though this copy also zone-darkens the
+	# fog and background and restores them, which the addon does not.
 	environment.fog_enabled = true
 	environment.fog_mode = Environment.FOG_MODE_DEPTH
 	environment.fog_light_color = _darkened(fog_color, dark)
@@ -771,7 +810,7 @@ func _darkened(c: Color, dark: float) -> Color:
 # --------------------------------------------------------------------------
 
 func _set_field(key: String, value: Variant) -> bool:
-	if not settings_dict().has(key):
+	if not DEFAULTS.has(key):
 		return false
 	var old = self.get(key)
 	if old == value:

@@ -10,6 +10,12 @@ signal psx_closed
 
 const MapView := preload("res://src/ui/map_view.gd")
 const PSXPanel := preload("res://src/ui/psx_panel.gd")
+## The scanner owns the echo range; the HUD only formats it.
+const SCANNER_SCRIPT := preload("res://src/ui/scanner.gd")
+## Design-space fallback for controls that have not been laid out yet.
+const DESIGN_SIZE := Vector2(1280, 720)
+## Five-character signal bar, one glyph row per level.
+const SIG_BARS := [".....", "|....", "||...", "|||..", "||||.", "|||||"]
 
 # Feed-snow shader: a window-local CRT static veil. Amount 0 is clear; 1 is
 # total signal loss. It never covers the radar window.
@@ -165,7 +171,7 @@ var _photo_showing := false
 var _debug_view := false
 var _flash: ColorRect
 var _shutter: Control
-var _shutter_frac := 0.0
+var _shutter_frac := -1.0
 var _static: ColorRect
 var _static_mat: ShaderMaterial
 var _pilot_status: Label
@@ -177,6 +183,9 @@ var _end_title: Label
 var _end_line: Label
 var _end_hint: Label
 var _map_view: Control = null
+## Last host rect handed to MapView.fit_to(), so a per-frame show_map() only
+## re-fits when the window actually changed size.
+var _map_fit := Vector2(-1.0, -1.0)
 var _crosshair: Control
 var _objective: Label
 var _objective_line: Label
@@ -192,6 +201,7 @@ var _pause: ColorRect
 var _psx_veil: ColorRect
 var _psx_panel: PanelContainer
 var _msg_tween: Tween
+var _prompt_tween: Tween = null
 var _subtitle_tween: Tween
 var _zone_tween: Tween
 var _blink_tween: Tween
@@ -277,7 +287,7 @@ func _build_desk() -> void:
 	_radar_window = radar["panel"]
 	_radar_body = radar["body"]
 	_radar_state = radar["state"]
-	_radar_state.text = "16 m"
+	_radar_state.text = "%d m" % int(SCANNER_SCRIPT.RANGE)
 	_desk.add_child(_radar_window)
 	_layout_windows(false)
 
@@ -875,6 +885,9 @@ func _draw_shutter() -> void:
 
 
 func set_shutter(frac: float) -> void:
+	# Pinned at full charge between shots: skip the redraw unless it moved.
+	if is_equal_approx(frac, _shutter_frac):
+		return
 	_shutter_frac = frac
 	if _shutter != null and _shutter.visible:
 		_shutter.queue_redraw()
@@ -925,9 +938,7 @@ func set_static_amount(a: float) -> void:
 
 
 func set_drone_status(tether_m: float, max_m: float, bars: int, battery: float) -> void:
-	var sig := ""
-	for i in 5:
-		sig += "|" if i < bars else "."
+	var sig: String = SIG_BARS[clampi(bars, 0, 5)]
 	var strain := (tether_m > max_m - 0.4)
 	var optic := "   DEBUG" if _debug_view else ("   LIVE" if _live_feed else "   STILL")
 	_pilot_status.text = "TETHER %4.1f / %2.0f m %s   SIGNAL %s   CHARGE %3.0f%%%s" % [
@@ -979,6 +990,8 @@ func show_end_card(title: String, line: String, hint: String) -> void:
 
 func hide_end_card() -> void:
 	_end_card.visible = false
+	# Reset the veil so the next loss fades in from black instead of popping.
+	_end_card.color.a = 0.0
 
 
 func _build_map() -> void:
@@ -986,14 +999,21 @@ func _build_map() -> void:
 	_map_view.visible = false
 	_map_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_map_view)
+	_map_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
 func show_map(data: Dictionary) -> void:
 	if _map_view != null:
 		var vs: Vector2 = _map_view.size
 		if vs.x < 2.0 or vs.y < 2.0:
-			vs = Vector2(1280, 720)
-		_map_view.fit_to(vs.x, vs.y)
+			vs = DESIGN_SIZE
+		# Main calls this every frame the map is open. fit_to() re-lays out and
+		# redraws, so it only runs when the host rect changed; assigning `data`
+		# carries no redraw of its own, so one request per call keeps the ink
+		# fresh without ever queueing the same frame twice.
+		if not vs.is_equal_approx(_map_fit):
+			_map_fit = vs
+			_map_view.fit_to(vs.x, vs.y)
 		_map_view.data = data
 		_map_view.visible = true
 		_map_view.queue_redraw()
@@ -1013,7 +1033,8 @@ func _input(event: InputEvent) -> void:
 		_debug_events["motion"] = int(_debug_events["motion"]) + 1
 	elif event is InputEventKey and event.pressed and not event.echo:
 		_debug_events["key"] = int(_debug_events["key"]) + 1
-	if event is InputEventKey and event.pressed and event.physical_keycode == KEY_F3:
+	if event is InputEventKey and event.pressed and not event.echo \
+			and event.physical_keycode == KEY_F3:
 		_debug_label.visible = not _debug_label.visible
 
 
@@ -1032,7 +1053,7 @@ func _draw_crosshair() -> void:
 func _safe_size(ctrl: Control) -> Vector2:
 	var vs := ctrl.size
 	if vs.x < 2.0 or vs.y < 2.0:
-		vs = Vector2(1280, 720)
+		vs = DESIGN_SIZE
 	return vs
 
 
@@ -1047,50 +1068,52 @@ func set_meters(o2: float, h2o: float, kcal: float, clock_hours: float) -> void:
 
 
 func set_prompt(text: String) -> void:
-	if _msg_tween != null and _msg_tween.is_valid():
-		pass  # messages and prompts are independent; keep both channels alive
+	# Prompts and messages are independent channels, so this kill stays local:
+	# an overlapping prompt must not leave the old chain's callback running.
+	if _prompt_tween != null and _prompt_tween.is_valid():
+		_prompt_tween.kill()
 	var tw := create_tween()
 	if _prompt.modulate.a > 0.0 and text != "":
 		tw.tween_property(_prompt, "modulate:a", 0.0, 0.08)
 	tw.tween_callback(func() -> void: _prompt.text = text)
 	if text != "":
 		tw.tween_property(_prompt, "modulate:a", 1.0, 0.12)
+	_prompt_tween = tw
+
+
+## The shared scaffold of the three text channels: reset, set, rise, hold, fall.
+## Callers keep their own Tween member so kill-previous stays per-channel.
+func _fade_pulse(label: Label, text: String, peak: float, in_t: float,
+		hold: float, out_t: float) -> Tween:
+	label.modulate.a = 0.0
+	label.text = text
+	var tw := create_tween()
+	tw.tween_property(label, "modulate:a", peak, in_t)
+	tw.tween_interval(hold)
+	tw.tween_property(label, "modulate:a", 0.0, out_t)
+	return tw
 
 
 func show_message(text: String, dur: float = 3.4) -> void:
-	_msg.text = text
 	if _msg_tween != null and _msg_tween.is_valid():
 		_msg_tween.kill()
-	_msg.modulate.a = 0.0
-	_msg_tween = create_tween()
-	_msg_tween.tween_property(_msg, "modulate:a", 1.0, 0.25)
-	_msg_tween.tween_interval(dur)
-	_msg_tween.tween_property(_msg, "modulate:a", 0.0, 0.6)
+	_msg_tween = _fade_pulse(_msg, text, 1.0, 0.25, dur, 0.6)
 
 
 ## The subtitle channel. Slower and quieter than show_message(); used for
 ## voices the player is overhearing rather than instructions.
 func show_subtitle(text: String, dur: float = 3.0) -> void:
-	_subtitle.text = text
 	if _subtitle_tween != null and _subtitle_tween.is_valid():
 		_subtitle_tween.kill()
-	_subtitle.modulate.a = 0.0
-	_subtitle_tween = create_tween()
-	_subtitle_tween.tween_property(_subtitle, "modulate:a", 0.92, 0.18)
-	_subtitle_tween.tween_interval(dur)
-	_subtitle_tween.tween_property(_subtitle, "modulate:a", 0.0, 0.55)
+	_subtitle_tween = _fade_pulse(_subtitle, text, 0.92, 0.18, dur, 0.55)
 
 
 ## Deck stencil / entry beat. Two short lines, then gone.
 func show_zone_beat(title: String, subtitle: String) -> void:
-	_zone_beat.text = title if subtitle == "" else "%s\n%s" % [title, subtitle]
+	var text: String = title if subtitle == "" else "%s\n%s" % [title, subtitle]
 	if _zone_tween != null and _zone_tween.is_valid():
 		_zone_tween.kill()
-	_zone_beat.modulate.a = 0.0
-	_zone_tween = create_tween()
-	_zone_tween.tween_property(_zone_beat, "modulate:a", 0.85, 0.5)
-	_zone_tween.tween_interval(1.8)
-	_zone_tween.tween_property(_zone_beat, "modulate:a", 0.0, 1.0)
+	_zone_tween = _fade_pulse(_zone_beat, text, 0.85, 0.5, 1.8, 1.0)
 
 
 ## A single white exposure hit, for the still camera catching something that
@@ -1124,6 +1147,12 @@ func begin_game() -> void:
 
 func set_paused_ui(on: bool) -> void:
 	_pause.visible = on
+
+
+## F3 label state. Main gates the per-frame diagnostics string on this so the
+## expensive roster walk only runs while someone can actually read it.
+func debug_label_visible() -> bool:
+	return _debug_label != null and _debug_label.visible
 
 
 func debug_tick(delta: float, fps: int, pos: Vector3, noise_count: int, extra := "") -> void:

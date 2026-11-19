@@ -125,13 +125,24 @@ func _run() -> void:
 	host.queue_free()
 	await _wait(2)
 
-	# --- Stalker geometry: authored rig, face is -Z, bigger skull --------------
+	# --- Watcher geometry: the same zombie rig gets the same close-up -------
+	var watcher := await _actor("res://scenes/actors/watcher.tscn")
+	_check(main._host_kind(watcher) == "host", "a watcher resolves as the host rig")
+	var watcher_staged: bool = main._stage_catch_face(watcher)
+	_check(watcher_staged, "watcher catch face stages")
+	_check(main._catch_cam_active, "watcher face beat is armed")
+	_check(main._static_lock == 0.0, "watcher face beat starts with snow suppressed")
+	_check_face(watcher, "watcher", 0.17)
+	watcher.queue_free()
+	await _wait(2)
+
+	# --- Stalker geometry: centipede rig, face is -Z --------------------------
 	var stalker := await _actor("res://scenes/actors/stalker.tscn")
 	var stalker_staged: bool = main._stage_catch_face(stalker)
 	_check(stalker_staged, "stalker catch face stages")
 	_check(main._catch_cam_active, "stalker face beat is armed")
 	_check(main._static_lock == 0.0, "stalker face beat starts with snow suppressed")
-	_check_face(stalker, "stalker", 0.26)
+	_check_face(stalker, "stalker", 0.36)
 
 	# Non-zombies must never get the kill close-up.
 	_check(not main._stage_catch_face(main.collector), "collector gets no catch face")

@@ -30,9 +30,10 @@ exposed. The master switch restores the authored look exactly. See
   dirty; it is a little grainier than the print and **near-sighted**: the lens
   loses focus a few metres out, so distance and fine detail still want a still
   exposure. The drive distortion is deliberately restrained: steering smears
-  and ghosts lightly, speed adds grain and a little tear, and a nearby hunter
-  adds a rolling band. It never gets fully clean, but distance from the winch
-  no longer degrades it — only real story beats drop the signal into snow.
+  and ghosts lightly, speed adds grain and a little tear, and a nearby hostile
+  body adds a rolling band. It never gets fully clean, but distance from the
+  winch no longer degrades it — only real story beats drop the signal into
+  snow.
   Lose the module and the feed goes with it — you are back to stills until you
   recover and refit it. Every drone carries the still camera as standard kit,
   even with live video.
@@ -54,21 +55,27 @@ exposed. The master switch restores the authored look exactly. See
   from, and listens; a second noise (or one very loud event) starts a slow,
   imprecise hunt. Break the ray or stop rolling and it searches the last place
   it saw motion, then gives up. Contact still kills. Hosts are deaf to each
-  other.
+  other. The zombie that runs you down and kills on contact is the plain
+  **host**; the Cold Hold's bodies are **watchers** — the same brain, but on
+  direct sight a watcher closes only to its ~7 m stand-off, plants and watches.
+  A watcher never attacks: it takes a chassis only when the player drives into
+  it, and it holds its ground when approached.
 - **M7: Deck B — the Cold Hold.** Through the junction's north airlock, an
   eight-metre umbilical opens into a pitch-black hold that has roughly doubled
   in size: the original open floor still reads as one room, with a west hall
   and two side bays, plus a north hall and two small rooms beyond it. Two more
   relays chain off the entry relay so every new bay stays inside the 36 m
   tether drum — `MAX_TETHER` never changes. The first time the active
-  drone crosses, four aggressive hunters wake at authored points 20+ m out:
+  drone crosses, four aggressive watchers wake at authored points 20+ m out:
   wider eyes (~21 m, 105°), a real memory, faster patrol/hunt/stalk speeds, and
-  a long patience. They stay escapable: break line of sight, stop rolling
-  outside the short still radius, and they search rather than track. Each owns
-  a separate rectangular loop that avoids the west side of the room and the
-  crawler hallway. The hold is genuinely dark (ambient and fog drop only while
-  the active drone is inside), sparse hard cover is the only cover, and the lamp
-  opens up just enough to read a body at the edge of its reach.
+  a long patience. They are watchers, not hunters: each closes to its ~7 m
+  stand-off, plants and watches, and never attacks — the fail state is a
+  contact the player drives into. They stay escapable: break line of sight,
+  stop rolling outside the short still radius, and they search rather than
+  track. Each owns a separate rectangular loop that avoids the west side of the
+  room and the crawler hallway. The hold is genuinely dark (ambient and fog drop
+  only while the active drone is inside), sparse hard cover is the only cover,
+  and the lamp opens up just enough to read a body at the edge of its reach.
 - **The Collector feeds itself, once.** The same first crossing sends the
   Collector to the Processor. It sets down anything it is carrying first, walks
   itself to the maw, and is consumed over ~3.6 s: the lantern gutters out, the
@@ -175,8 +182,8 @@ The ship and the bay are real scenes, not runtime-generated geometry:
   `Spur`, `Galley`, `Annex`, `BerthWing`, `ProcessorWing`, `Zone2`,
   `EngineRoom`, `World` and `Data`.
 - `scenes/level/rooms/fab_bay.tscn` — the safe room.
-- `scenes/actors/*.tscn` — player, drone, host, collector, Processor, crawler
-  and Stalker prefabs.
+- `scenes/actors/*.tscn` — player, drone, host, watcher, collector, Processor,
+  crawler and Stalker prefabs.
 - `scenes/main.tscn` — entry point with the `WorldEnvironment`; the HUD and
   monster bodies are wired in code.
 
@@ -243,8 +250,8 @@ narrow, sprung beam.
    R to reel. Fit it at the fabricator to replace the weak omni glow with a
    narrow, spring-mounted beam that kicks as the bot starts, stops and turns.
    Press **L** to switch the beam off/on. The beam is real light: while it is
-   on, hunters and the Stalker see the bot farther and even a parked drone is a
-   beacon, so running dark is how you hide.
+   on, watchers and the Stalker see the bot farther and even a parked drone is
+   a beacon, so running dark is how you hide.
    `B` drops another bot at the dock; `Q` hops the link between deployed bots
    at any time; the parked one waits.
 3. **Video module salvage:** from the junction, take the east opening into
@@ -260,11 +267,12 @@ narrow, sprung beam.
    available, and a print replaces only the video window.
 5. **Cross into Deck B.** With the module aboard, the junction's north airlock
    opens onto the umbilical and the Cold Hold. The first active-drone crossing
-   wakes four aggressive hunters at the far side, consumes the Collector, and
+   wakes four aggressive watchers at the far side, consumes the Collector, and
    arms the crawler in the east side hall. The relay takes over the tether,
    the radar labels it `RELAY`, and Deck B gets its own inset on the map. There
-   is no authored loss: keep the hull between you and a hunter, keep rolling
-   only when you must, and come home if the feed starts to tear.
+   is no authored loss: a watcher will plant and watch rather than chase you
+   down, but never drive into one — and remember it can see a parked chassis
+   inside its short still radius. Come home if the feed starts to tear.
 6. **Follow the amber lights into Deck C.** At the far end of the crawler side
    hall the wall is gone. The engine room's relay takes over (`ENGINE` on the
    scanner), the room is dark around a red-lit core, and the Stalker waits
@@ -281,7 +289,7 @@ narrow, sprung beam.
   each print reads as evidence from a camera you don't trust, not video.
 - **M2 done-when:** the flashlight run is a quiet, tense traversal — the grind
   of the galley door and the empty galley do the work; no junction ambush.
-- **M7 done-when:** the first Cold Hold crossing spawns four hunters without an
+- **M7 done-when:** the first Cold Hold crossing spawns four watchers without an
   instant threshold kill, the Collector is visibly eaten exactly once, Deck A
   is thereafter threat-free and the Processor inert, and the relay/HUD/map
   carry the player through a dark, escapable hold. The module is never taken
@@ -298,6 +306,7 @@ narrow, sprung beam.
 	godot --headless --path . res://tests/autotest.tscn
 	godot --headless --path . res://tests/camera_loop.tscn
 	godot --headless --path . res://tests/host_ai_rules.tscn
+	godot --headless --path . res://tests/watcher_ai.tscn
 	godot --headless --path . res://tests/stalker_ai.tscn
 	godot --headless --path . res://tests/zombie_reach.tscn
 	godot --headless --path . res://tests/catch_face.tscn
@@ -316,16 +325,16 @@ and cargo persistence), sortie lifecycle, chair
 suspend/resume persistence, the common host rules (curious/hunt/stalk, imprecise
 hearing, stillness safety, host-vs-host deafness), radar-first stills, live-feed
 unlock and motion-stress plumbing after the module salvage, the Deck B
-crossing (airlock, four aggressive hunters, no instant threshold kill, relay
+crossing (airlock, four aggressive watchers, no instant threshold kill, relay
 anchor and radar label, darkness, the one-shot Collector sacrifice and dormant
 Processor, the crawler trigger/deferral/resolution, F3 roster, no authored
 loss), the hull bus, and the hand-copy map with its Deck B/engine inset. The
-other suites add camera-loop hub/install checks, host-AI rules, Stalker AI,
-the chase-reach pose probe (both host and Stalker hold their arms toward the
-drone only while pursuing), the catch-face feed probe (a random close-up of
-the catcher's face for the last live frames before snow and destruction),
-Collector-AI, Processor-AI, level-scene and crawler set-piece checks. Run
-`tools/run_tests.sh` for the live totals.
+other suites add camera-loop hub/install checks, host-AI rules, watcher-AI
+rules, Stalker AI, the chase-reach pose probe (host arms, Stalker forelegs,
+toward the drone only while pursuing), the catch-face feed probe
+(a random close-up of the catcher's face for the last live frames before snow
+and destruction), Collector-AI, Processor-AI, level-scene and crawler
+set-piece checks. Run `tools/run_tests.sh` for the live totals.
 
 The **level scene** test is the editor contract: it loads the baked scenes,
 checks the controller wiring and anchors, confirms geometry references shared
@@ -351,13 +360,25 @@ so level geometry is free to change.
 The **host AI rules** test builds a small walled room and checks the
 escalation contract directly: blocked sight decays a stalk into a search, a
 still drone is unseen at every range (including 2 m), movement re-acquires it,
-stalking keeps its distance, stopping ends the stalk without a catch, and only
-a moving drone is killed on contact by the common host brain.
+the stalk closes and runs the drone down, stopping out of reach ends the stalk
+without a catch, and a moving drone in the open is killed on contact by the
+common host brain.
 
-The **stalker AI** test drives the Stalker prefab directly: modelled body,
-default patrol, directional investigation, immediate sight/chase, low-table
-cover, last-seen-direction search, the live-feed lurk/lunge and the contact
-kill. In the shipped level it is the engine-room tenant on Deck C.
+The **watcher AI** test drives the Watcher prefab directly: it walks its route
+unprovoked, closes to its ~6.8 m stand-off and plants instead of attacking,
+holds the stand-off and its ground when the player approaches, kills only on
+contact the player drives into, gives the drone up when it loses sight, and —
+in the aggressive Zone 2 profile — still sees a parked chassis inside its
+short still radius, so stopping at arm's length is not safety.
+
+The **stalker AI** test drives the Stalker prefab directly: the thirty-leg
+centipede body with exact two-bone IK and a planted-foot gait, default patrol,
+directional investigation, sight-into-prowl, low-table cover,
+last-seen-direction search, the cat-and-mouse spook (a cut-off ahead of the
+prey that never catches), the patience clock, the semi-circular kill approach,
+the lunge contact kill, wall climbing with the ceiling vault, and the
+folded-lair drive-by spring. In the shipped level it is the engine-room tenant
+on Deck C.
 
 The **collector AI** test checks loud-door noise, the Collector's pickup/deposit
 cycle, long-range head tracking with line of sight, the mid-range spit at a
