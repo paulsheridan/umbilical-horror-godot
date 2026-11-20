@@ -19,9 +19,10 @@ extends Node3D
 ##
 ## M7: the Cold Hold. Beyond the junction's north airlock, an eight-metre
 ## umbilical opens into a pitch-black 50 x 25 m hold. A relay inside keeps
-## every hold point inside the 36 m tether. The first entry wakes four watchers,
-## feeds the Collector to the Processor (one-shot), and arms the crawler
-## set piece in the side hall.
+## every hold point inside the 36 m tether. The first entry wakes four watchers
+## (on a shared patience clock: they plant and watch, then hunt together once
+## it runs out) and arms the crawler set piece in the side hall. The Collector
+## is not part of that beat: it keeps working the ship all session.
 
 const FAB_BAY_SCENE := preload("res://scenes/level/rooms/fab_bay.tscn")
 const SHIP_SCENE := preload("res://scenes/level/ship.tscn")
@@ -91,11 +92,14 @@ var _pending_end_card := false
 
 # --- Deck B / Cold Hold ----------------------------------------------------
 var _zone2_entered := false       # active drone has crossed at least once
-var _zone2_spawned := false       # four hunters exist (persist for the session)
+var _zone2_spawned := false       # four watchers exist (persist for the session)
+const WATCHER_PATIENCE_MIN := 120.0    # seconds of watching guaranteed after first sight
+const WATCHER_PATIENCE_EXTRA := 120.0  # random additional window, 0..this
+var _zone2_watchers: Array = []         # the spawned bodies, for the hostility flip
+var _watcher_clock := -1.0             # -1 idle; >=0 armed and counting down
+var _watchers_hostile := false
 var _zone2_dark := false          # current darkness target
 var _zone2_beat_shown := false
-var _collector_sacrifice_started := false
-var _collector_sacrificed := false
 var crawler = null
 var _crawler_done := false
 ## Deck C: the engine-room Stalker. Spawned once at boot; it is the threat in
@@ -119,7 +123,7 @@ var _map_open := false
 ## Viewport size the map sheet was last laid out for. The map content cannot
 ## change while it is open (it opens only from the table, never while piloting),
 ## so the sheet is fed once in _open_map() and only re-fed on a resize.
-var _map_sent_size := Vector2.ZERO
+var _map_sent_size := Vector2i.ZERO
 var _visited_zones := {"bay": true}
 # Radar-charted walls: persistent world-grid of scanner returns, shown as ink
 # on the hand-copy map. The sweep literally fills the map in.
@@ -191,8 +195,10 @@ const COLLECTOR_ROUTE := [
 
 # --- Optics: stills first, live video after the salvage ---------------------
 # Every drone starts with the still camera only. Recovering the video module
-# and racking it at the fabricator unlocks the live drone feed for later
-# sorties; losing the module takes the feed away again until it is recovered.
+# and racking it at the fabricator is a permanent fleet upgrade: once racked,
+# every chassis — deployed now or later — flies the live feed, and losing one
+# never revokes it. Only a bot caught while *carrying* the not-yet-installed
+# module drops a recoverable wreck (the pre-install salvage loop).
 const VIDEO_FEED_ENABLED := true   # master gate; actual feed also needs _camera_installed
 
 # The photo camera is standard equipment on every first-iteration drone: a
@@ -201,13 +207,21 @@ var _feed_vp: SubViewport = null
 var _feed_cam: Camera3D = null
 
 # The kill close-up. When a live-feed chassis is caught, the tube cuts to a
-# tight, randomly framed patch of the catcher's face for a few frames before
-# the signal dies. The camera is staged in world space from the head bone; it
-# never follows the drone camera, so losing the module cannot cancel the beat.
-const CATCH_FACE_HOLD := 0.20       # ~12 rendered frames at 60 fps; still a brief beat
+# tight, randomly framed patch of the catcher's face for a real beat of the
+# attack before the signal dies. The camera is staged in world space from the
+# head bone; it never follows the drone camera, so the beat needs only a live
+# feed at catch time (the module itself is permanent kit, never lost here).
+const CATCH_FACE_HOLD := 0.75       # ~45 rendered frames at 60 fps; a beat, not a flash
 const CATCH_FACE_MIN_FRAMES := 2
 const CATCH_FACE_FOV := 58.0
 const CATCH_FACE_CLEARANCE := 0.10  # metres outside the head surface
+# The attack is ongoing, not settling, so both shakes keep a constant amplitude
+# through the hold: the staged framing jitters in world space while the caught
+# chassis judders under it. Kept as named constants so probes can read them.
+const CATCH_SHAKE_POS := 0.012        # metres of framing jitter per axis
+const CATCH_SHAKE_ROT := 0.018        # radians of roll/yaw/pitch jitter
+const CATCH_DRONE_SHAKE_ROT := 0.035  # radians of chassis yaw judder
+const CATCH_DRONE_SHAKE_POS := 0.015  # metres of chassis nudge per axis
 var _catch_cam_active := false
 var _catch_cam_xform := Transform3D.IDENTITY
 var _catch_cam_fov := CATCH_FACE_FOV
@@ -217,6 +231,10 @@ var _catch_frames := 0
 ## takes over. This keeps `_sync_feed_view` from resuming the drone camera if
 ## a live source (debug vision) survives the catch.
 var _catch_frozen := false
+## The chassis that is dying during the beat. Its pose is re-anchored from the
+## death spot every frame, so the judder can never accumulate into a drift.
+var _catch_drone = null
+var _catch_drone_rest := Transform3D.IDENTITY
 ## Last staged geometry, kept readable for probes and tuning.
 var last_catch_face: Dictionary = {}
 var _catch_rng := RandomNumberGenerator.new()
@@ -270,7 +288,7 @@ func _ready() -> void:
 	hud = CanvasLayer.new()
 	hud.set_script(HUD)
 	add_child(hud)
-	hud.start_clicked.connect(_on_start_clicked)
+	hud.lore_clicked.connect(_on_start_clicked)
 	hud.resume_clicked.connect(_on_resume_clicked)
 	hud.psx_open_requested.connect(_on_psx_open_requested)
 	hud.psx_closed.connect(_on_psx_closed)
@@ -461,6 +479,14 @@ func _process(delta: float) -> void:
 	_static_boost = maxf(_static_boost - delta * 0.9, 0.0)
 	_static_lock = maxf(_static_lock - delta * 1.3, 0.0)
 	hud.set_static_amount(amt)
+
+	# The watchers' shared patience. Unpaused game time, not piloting time:
+	# leaving the chair does not pause the doom clock (the dread is the point).
+	if _watcher_clock > 0.0 and GameState.running and not GameState.paused:
+		_watcher_clock -= delta
+		if _watcher_clock <= 0.0:
+			_watcher_clock = 0.0
+			_flip_watchers_hostile()
 
 	# Deck B is genuinely dark; Deck A keeps its authored ambient. The shift
 	# is a slow fade so crossing the airlock reads as light dying behind you.
@@ -899,8 +925,9 @@ func _hud_pickup_message() -> void:
 ## The four Cold Hold watchers. Called once, on the first active-drone entry;
 ## they persist for the session. Spawn points are 20+ m from the threshold, so
 ## crossing the airlock never ends in an instant kill. These are watchers, not
-## hunters: each closes to its stand-off and plants, and the only loss is a
-## contact the player drives into (src/host/watcher.gd).
+## hunters: each closes to its stand-off and plants while passive. The first
+## genuine sighting by any of them arms one shared patience clock; when it
+## expires all four flip to hunting together (see _flip_watchers_hostile).
 func _spawn_zone2_hosts(force := false) -> void:
 	if _zone2_spawned and not force:
 		return
@@ -911,6 +938,32 @@ func _spawn_zone2_hosts(force := false) -> void:
 		# Start on the leg nearest the authored spawn, not always index 0.
 		w._wp = _nearest_route_point(w, route)
 		w.drone = drone
+
+
+## The shared clock's only arm: the fleet's first sighting by ANY watcher. A
+## later sighting changes nothing while the clock is running (or spent).
+func _on_watcher_sighted() -> void:
+	if _watcher_clock < 0.0 and not _watchers_hostile:
+		_watcher_clock = WATCHER_PATIENCE_MIN + randf_range(0.0, WATCHER_PATIENCE_EXTRA)
+
+
+## The patience is spent: every watcher turns hunter at once, permanently.
+## Guarded so the per-frame tick and a forced flip can never run it twice.
+func _flip_watchers_hostile() -> void:
+	if _watchers_hostile:
+		return
+	_watchers_hostile = true
+	for w in _zone2_watchers:
+		if is_instance_valid(w):
+			w.set_hostile(true)
+	# Clamp so the clock tick no-ops from here on.
+	_watcher_clock = 0.0
+
+
+## Test hook: expire the shared clock now. Works whether or not it was armed,
+## and leaves the flag set so any later-spawned body comes up hostile.
+func force_watcher_hostility() -> void:
+	_flip_watchers_hostile()
 
 
 func _nearest_route_point(h, route: Array) -> int:
@@ -944,9 +997,10 @@ func _host(pos: Vector3, waypoints: Array, aggressive := false):
 
 
 ## A Cold Hold watcher: the zombie body with the watch contract instead of the
-## attack (see src/host/watcher.gd). It uses the aggressive Zone 2 senses —
-## wide eyes, the short still radius, breathing — so it reads the room exactly
-## like the hunters it replaced; only its stalk differs.
+## immediate attack (see src/host/watcher.gd). It uses the aggressive Zone 2
+## senses — wide eyes, the short still radius, breathing — so it reads the room
+## exactly like the hunters it replaced; only the passive stalk differs, and
+## main's shared clock ends that for the whole fleet at once.
 func _watcher(pos: Vector3, waypoints: Array):
 	var watcher := WATCHER_SCENE.instantiate()
 	watcher.configure_aggressive()
@@ -958,6 +1012,13 @@ func _watcher(pos: Vector3, waypoints: Array):
 	watcher.reset()
 	watcher.drone_caught.connect(_on_drone_caught.bind(watcher))
 	NoiseBus.emitted.connect(watcher._on_noise)
+	# The shared clock is armed by whichever body sights the drone first, and
+	# every body is flipped together when it expires. A late spawn (forced or
+	# an edge) comes up already hostile if the patience is spent.
+	watcher.sighted.connect(_on_watcher_sighted)
+	_zone2_watchers.append(watcher)
+	if _watchers_hostile:
+		watcher.set_hostile(true)
 	hosts.append(watcher)
 	return watcher
 
@@ -1020,7 +1081,8 @@ func _try_start_crawler(dpos: Vector3) -> void:
 
 
 func _on_crawler_says(text: String) -> void:
-	hud.show_subtitle(text, 2.8)
+	# The plea has to be readable before the yank cuts it off mid-line.
+	hud.show_subtitle(text, 4.0)
 
 
 func _on_crawler_finished() -> void:
@@ -1056,6 +1118,7 @@ func _spawn_engine_stalker() -> void:
 	stalker._enter_ambush()
 	stalker.drone = null
 	stalker.drone_caught.connect(_on_drone_caught.bind(stalker))
+	stalker.drone_struck.connect(_on_stalker_strike)
 	stalker.lunge_started.connect(_on_stalker_lunge)
 	NoiseBus.emitted.connect(stalker._on_noise)
 	if scanner != null:
@@ -1069,6 +1132,15 @@ func _on_stalker_lunge() -> void:
 	_static_boost = maxf(_static_boost, 0.7)
 	hud.jumpscare()
 	Sfx.play("screech", Sfx.CENTER, 2.0)
+
+
+func _on_stalker_strike() -> void:
+	# First contact only hurts the chassis: a thud and a brief signal blip.
+	# No reel, no face beat, no teardown and no fleet hop — the lunge sting
+	# already fired and the tilted feed is the real tell.
+	if drone != null and is_instance_valid(drone):
+		Sfx.play("thud", drone.global_position, 2.0)
+	_static_lock = maxf(_static_lock, 0.8)
 
 
 func _set_zone2_dark(on: bool, delta: float) -> void:
@@ -1155,7 +1227,6 @@ func _spawn_collector() -> void:
 	collector.door_host = ship
 	collector.bot_picked_up.connect(_on_bot_picked_up)
 	collector.bot_delivered.connect(_on_bot_delivered)
-	collector.sacrifice_finished.connect(_on_collector_sacrificed)
 	collector.reset()
 	# Route point 0 is the nest itself. Start on the next point so the body is
 	# already walking when the scene opens instead of resting on its spawn mark.
@@ -1195,9 +1266,9 @@ func _on_bot_delivered(bot) -> void:
 	hud.show_message("BOT %d: PROCESSOR" % (bot.bot_index + 1), 3.0)
 
 
-## The four hunters wake on first entry. The Collector gives itself to the
-## Processor in the same beat: one visible/audible act, then Deck A is free of
-## both the opening patrol and the wandering scavenger.
+## The four hunters wake on first entry. The Collector is untouched by the
+## crossing: it keeps working its loop all session, hauling the crew remains to
+## the Processor's pile.
 func _on_active_enter_zone2() -> void:
 	if _zone2_entered:
 		return
@@ -1208,29 +1279,6 @@ func _on_active_enter_zone2() -> void:
 		hud.show_zone_beat("DECK B", "")
 		Sfx.play("zone_cue", Sfx.CENTER, -4.0)
 		_static_lock = 0.5
-	_start_collector_sacrifice()
-
-
-func _start_collector_sacrifice() -> void:
-	if _collector_sacrifice_started or _collector_sacrificed:
-		return
-	_collector_sacrifice_started = true
-	if collector != null and is_instance_valid(collector):
-		collector.begin_sacrifice(ship.collector_sacrifice)
-		hud.show_subtitle("COLLECTOR: GONE", 3.0)
-
-
-func _on_collector_sacrificed() -> void:
-	if _collector_sacrificed:
-		return
-	_collector_sacrificed = true
-	if processor != null and is_instance_valid(processor):
-		processor.set_dormant(true)
-	# The maw's last work is heard through the hull, long after the player can
-	# see the chamber. The wing is inert from here on.
-	Sfx.play("wet_snap", ship.collector_sacrifice, -4.0)
-	Sfx.play("wet_crunch", ship.collector_sacrifice, -6.0, 0.82)
-	hud.show_subtitle("PROCESSOR: DORMANT", 3.0)
 
 
 func _on_drone_caught(host) -> void:
@@ -1239,15 +1287,17 @@ func _on_drone_caught(host) -> void:
 	_reeling = true
 	var caught = drone
 	var dpos: Vector3 = caught.global_position
-	# Losing the chassis loses whatever module it carried. The still camera is
-	# standard kit, but the salvaged video module is a one-off and stays out
-	# there in the wreck until someone goes back for it.
-	var camera_loss: bool = _camera_installed or _cargo == "camera"
+	# Only cargo in transit can be lost. An installed module is permanent fleet
+	# kit: the flag is global and never cleared, so this chassis dying does not
+	# take the feed from the survivors or from any later sortie. A bot caught
+	# with the salvaged module still in its claw, before the fabricator racked
+	# it, drops the wreck below and re-arms the pre-install salvage loop.
+	var camera_transit_loss: bool = _cargo == "camera"
 	caught.set_controlled(false)
 	Sfx.play("thud", dpos, 2.0)
-	# One last look through the tube: stage the face beat before losing the
-	# module, and only when a live feed is actually up. Still-only builds keep
-	# the old immediate snow so no phantom face appears.
+	# One last look through the tube: stage the face beat before the link hops,
+	# and only when a live feed is actually up. Still-only builds keep the old
+	# immediate snow so no phantom face appears.
 	var face_staged := false
 	if _live_feed_active():
 		face_staged = _stage_catch_face(host)
@@ -1255,8 +1305,9 @@ func _on_drone_caught(host) -> void:
 		Sfx.play("static", Sfx.CENTER, -6.0)
 		_static_lock = 2.2
 	hud.show_message("BOT %d LOST" % (caught.bot_index + 1), 3.0)
-	if camera_loss:
-		_camera_installed = false
+	if camera_transit_loss:
+		# The module was still in the cargo claw, not racked: it goes back into
+		# a wreck at the death site so the salvage loop can be retried.
 		ship.spawn_wreck(dpos)
 		_camera_site_pos = dpos
 		_act_stage = 2 if _act_stage >= 1 else 0
@@ -1689,6 +1740,11 @@ func _at_fabricator() -> void:
 	if _camera_held:
 		_camera_held = false
 		_camera_installed = true
+		# Racked is permanent: wake the parked fleet now too, so a drone already
+		# in the field flies live on its next link-up without waiting for a bind.
+		for d in drones:
+			if d != null and is_instance_valid(d):
+				d.live_view = true
 		if _act_stage == 0:
 			_act_stage = 1           # module aboard: the interception is armed
 		elif _act_stage == 2:
@@ -1743,11 +1799,13 @@ func _sync_feed_view() -> void:
 	if _feed_vp == null or _feed_cam == null:
 		return
 	if _catch_cam_active:
-		# The kill close-up overrides the normal live/still decision. It must
-		# keep rendering even though the catch just took `_camera_installed`.
+		# The kill close-up overrides the normal live/still decision; it keeps
+		# rendering through the beat even after the chassis is struck from the
+		# fleet. The attack is still in progress, so the framing shudders at a
+		# constant amplitude instead of settling.
 		_feed_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 		_feed_cam.fov = _catch_cam_fov
-		_feed_cam.global_transform = _catch_cam_xform
+		_feed_cam.global_transform = _shaken_catch_xform()
 		_catch_frames += 1
 		_set_video_optics(false)
 		hud.set_feed_source(_feed_vp)
@@ -1882,6 +1940,11 @@ func _stage_catch_face(host) -> bool:
 	_catch_cam_fov = CATCH_FACE_FOV
 	_catch_hold = CATCH_FACE_HOLD
 	_catch_frames = 0
+	# Remember the chassis that is about to die, and the pose it died in. Every
+	# judder frame offsets from this rest pose, never from the previous frame.
+	_catch_drone = drone if drone != null and is_instance_valid(drone) else null
+	_catch_drone_rest = _catch_drone.global_transform if _catch_drone != null \
+			else Transform3D.IDENTITY
 	# The face frames are clean: hold the snow back until the cut.
 	_static_lock = 0.0
 	_static_boost = 0.0
@@ -1889,11 +1952,49 @@ func _stage_catch_face(host) -> bool:
 	return true
 
 
+## Jitter the staged framing so the face reads as a struggle, not a portrait.
+## Roll, yaw and pitch happen in the lens's own frame so the picture shudders
+## without ever swinging off the face patch.
+func _shaken_catch_xform() -> Transform3D:
+	var xform := _catch_cam_xform
+	xform.origin += Vector3(
+			_catch_rng.randf_range(-CATCH_SHAKE_POS, CATCH_SHAKE_POS),
+			_catch_rng.randf_range(-CATCH_SHAKE_POS, CATCH_SHAKE_POS),
+			_catch_rng.randf_range(-CATCH_SHAKE_POS, CATCH_SHAKE_POS))
+	var basis := xform.basis
+	basis = basis.rotated(basis.y.normalized(),
+			_catch_rng.randf_range(-CATCH_SHAKE_ROT, CATCH_SHAKE_ROT))
+	basis = basis.rotated(basis.x.normalized(),
+			_catch_rng.randf_range(-CATCH_SHAKE_ROT, CATCH_SHAKE_ROT))
+	basis = basis.rotated(basis.z.normalized(),
+			_catch_rng.randf_range(-CATCH_SHAKE_ROT, CATCH_SHAKE_ROT))
+	xform.basis = basis
+	return xform
+
+
+## Judder the caught chassis around the spot where it died: a small yaw and a
+## small positional nudge, both re-anchored to the staged rest pose each frame.
+func _shake_catch_drone() -> void:
+	if _catch_drone == null or not is_instance_valid(_catch_drone):
+		return
+	var basis := _catch_drone_rest.basis.rotated(Vector3.UP,
+			_catch_rng.randf_range(-CATCH_DRONE_SHAKE_ROT, CATCH_DRONE_SHAKE_ROT))
+	var pos := _catch_drone_rest.origin + Vector3(
+			_catch_rng.randf_range(-CATCH_DRONE_SHAKE_POS, CATCH_DRONE_SHAKE_POS),
+			_catch_rng.randf_range(-CATCH_DRONE_SHAKE_POS, CATCH_DRONE_SHAKE_POS),
+			_catch_rng.randf_range(-CATCH_DRONE_SHAKE_POS, CATCH_DRONE_SHAKE_POS))
+	_catch_drone.global_transform = Transform3D(basis, pos)
+
+
 ## End the face beat: freeze the last frame, then let the snow take the tube.
 ## The cut waits for the minimum frame count so a stalled frame cannot skip it.
 func _tick_catch_face(delta: float) -> void:
 	if not _catch_cam_active:
 		return
+	# The bot keeps struggling while its face is on the glass. `_process` stalls
+	# during a pause, but the guard keeps a paused frame from juddering anyway.
+	if not GameState.paused:
+		_shake_catch_drone()
 	_catch_hold -= delta
 	if _catch_hold > 0.0 or _catch_frames < CATCH_FACE_MIN_FRAMES:
 		return
@@ -1909,6 +2010,7 @@ func _tick_catch_face(delta: float) -> void:
 func _clear_catch_face() -> void:
 	_catch_cam_active = false
 	_catch_frozen = false
+	_catch_drone = null
 	last_catch_face = {}
 
 
@@ -1973,8 +2075,10 @@ func _teardown_sortie(lost: bool) -> void:
 		_show_module_loss_card()
 
 
-## The crash card for losing the video module. Shown at teardown when the
-## fleet is gone, or immediately when a surviving chassis carries the run on.
+## The crash card for a bot caught while carrying the still-uninstalled video
+## module: the wreck is out there and the next sortie must go and fetch it.
+## Shown at teardown when the fleet is gone, or immediately when a surviving
+## chassis carries the run on. Once the module is racked there is no such card.
 func _show_module_loss_card() -> void:
 	_pending_end_card = false
 	hud.show_end_card("MODULE LOST", "STILL CAMERA ONLY", "CLICK")

@@ -1,8 +1,9 @@
 extends Node3D
-## Focused watcher-AI rules probe. The Watcher is the zombie that never
-## attacks: it closes to its stand-off, plants and watches, and the only loss
-## is a contact the player drives into. Everything else is the Host brain it
-## inherits — the shared contract lives in tests/host_ai_rules.gd.
+## Focused watcher-AI rules probe. The Watcher watches first and hunts later:
+## while passive it closes to its stand-off and plants, and the only loss is a
+## contact the player drives into. Once hostile it runs the plain Host brain
+## and kills on contact. Everything else is the Host brain it inherits — the
+## shared contract lives in tests/host_ai_rules.gd.
 ##
 ## Run: godot --headless --path . res://tests/watcher_ai.tscn
 
@@ -156,6 +157,93 @@ func _run() -> void:
 	drone.global_position = watcher.global_position + Vector3(0, 0.12, -0.8)
 	await _wait(12)
 	_check(_caught, "stopping next to a watcher does not save the chassis")
+
+	# --- The fleet clock's trigger: one sighting per body, counted once -------
+	# main arms its shared patience clock from this signal; a second sighting
+	# after a give-up must never re-arm it.
+	drone.velocity = Vector3.ZERO
+	drone.global_position = Vector3(0, 0.32, -30)
+	await _fresh_watcher()
+	watcher.waypoints = [Vector3(-3, 0, 0), Vector3(3, 0, 0)]
+	await _wait(2)
+	var sights := [0]
+	watcher.sighted.connect(func() -> void: sights[0] += 1)
+	drone.global_position = Vector3(0, 0.32, -8)
+	drone.velocity = Vector3(0, 0, -1)
+	await _wait(6)
+	_check(watcher.state == watcher.State.STALK and sights[0] == 1,
+			"the first sighting fires `sighted` once")
+	# Break sight through the inherited give-up tail, then sight it again.
+	drone.velocity = Vector3.ZERO
+	drone.global_position = Vector3(0, 0.32, -30)
+	await _wait(900)
+	_check(watcher.state == watcher.State.PATROL,
+			"the watcher gives up the lost drone before the second sighting")
+	# It patrols its route facing ±X now, so put the drone back inside its
+	# cone rather than assuming the old heading.
+	var ahead: Vector3 = -watcher.global_transform.basis.z
+	ahead.y = 0.0
+	drone.global_position = watcher.global_position + ahead.normalized() * 8.0 \
+			+ Vector3(0, 0.12, 0)
+	drone.velocity = Vector3(0, 0, -1)
+	await _wait(6)
+	_check(watcher.state == watcher.State.STALK, "the drone is sighted a second time")
+	_check(sights[0] == 1, "`sighted` stays one-shot across chases")
+
+	# --- Hostile: it closes inside the stand-off and runs the drone down -----
+	drone.velocity = Vector3.ZERO
+	drone.global_position = Vector3(0, 0.32, -30)
+	await _fresh_watcher()
+	watcher.waypoints = []
+	drone.global_position = Vector3(0, 0.32, -9.5)
+	drone.velocity = Vector3(0, 0, -1)
+	await _wait(6)
+	_check(watcher.state == watcher.State.STALK and not watcher.hostile,
+			"the watcher is still passive when it acquires the drone")
+	watcher.set_hostile(true)
+	var min_gap := INF
+	for _i in 420:
+		await get_tree().physics_frame
+		min_gap = minf(min_gap, watcher.global_position.distance_to(drone.global_position))
+		if _caught:
+			break
+	_check(min_gap < watcher.WATCH_STANDOFF,
+			"a hostile watcher closes inside the stand-off (%.1f m)" % min_gap)
+	_check(_caught, "a hostile watcher kills on contact like the plain host")
+
+	# --- Hostility persists: a give-up does not make it passive again --------
+	drone.velocity = Vector3.ZERO
+	drone.global_position = Vector3(0, 0.32, -30)
+	await _fresh_watcher()
+	watcher.waypoints = [Vector3(-3, 0, 0), Vector3(3, 0, 0)]
+	watcher.set_hostile(true)
+	drone.global_position = Vector3(0, 0.32, -8)
+	drone.velocity = Vector3(0, 0, -1)
+	await _wait(6)
+	_check(watcher.state == watcher.State.STALK, "the hostile watcher acquires the drone")
+	drone.velocity = Vector3.ZERO
+	drone.global_position = Vector3(0, 0.32, -30)
+	await _wait(900)
+	_check(watcher.hostile and watcher.state == watcher.State.PATROL,
+			"a hostile watcher still gives up a trail it lost")
+	# Re-sight: hostile closes inside the stand-off instead of planting. Aim it
+	# at the drone from its current patrol heading, as a real sighting would.
+	var facing: Vector3 = -watcher.global_transform.basis.z
+	facing.y = 0.0
+	drone.global_position = watcher.global_position + facing.normalized() * 8.0 \
+			+ Vector3(0, 0.12, 0)
+	drone.velocity = Vector3(0, 0, -1)
+	await _wait(6)
+	_check(watcher.hostile and watcher.state == watcher.State.STALK,
+			"hostility survives the give-up")
+	var reclose := watcher.global_position.distance_to(drone.global_position)
+	for _i in 300:
+		await get_tree().physics_frame
+		reclose = watcher.global_position.distance_to(drone.global_position)
+		if reclose < watcher.WATCH_STANDOFF - 0.5:
+			break
+	_check(reclose < watcher.WATCH_STANDOFF,
+			"a re-sighted hostile watcher closes again (%.1f m)" % reclose)
 
 	print("WATCHER AI", " FAILED" if _failed else " PASS")
 	get_tree().quit(1 if _failed else 0)

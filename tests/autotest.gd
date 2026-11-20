@@ -5,6 +5,7 @@ extends Node
 ## and posts to NoiseBus, focus/interact resolves a prompt + message line,
 ## meters tick while GameState is running.
 
+const HUD := preload("res://src/ui/hud.gd")
 var _failed := false
 
 
@@ -23,6 +24,31 @@ func _run() -> void:
 	add_child(main)
 	for _i in 5:
 		await get_tree().physics_frame
+	# --- Title -> lore card -> game -------------------------------------------
+	# Drive the real player flow rather than main's start entry point: the title
+	# click must reveal the lore card, and the lore click is what starts play.
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	_check(not main.hud._lore.visible, "the lore card starts hidden")
+	main.hud._on_title_gui_input(click)
+	_check(not main.hud._title.visible and main.hud._lore.visible,
+			"the title click reveals the lore card")
+
+	var lore_texts: Array[String] = []
+	for l: Label in main.hud._lore_labels:
+		lore_texts.append(l.text)
+	_check(lore_texts == HUD.LORE_PARAGRAPHS,
+			"the lore card carries the authored paragraphs verbatim")
+	_check(lore_texts.size() > 0 and lore_texts[0].ends_with("workshop for hull repair drones."),
+			"the first lore paragraph ends with the workshop line")
+	_check(lore_texts.has("Press E on the chair to pilot a drone."),
+			"the pilot instruction is its own lore paragraph")
+
+	# This synchronously fires main._on_start_clicked through the signal, so the
+	# game is now started by the same path a player takes.
+	main.hud._on_lore_gui_input(click)
+	# Unchanged direct-call coverage; _started's guard makes it a no-op here.
 	main._on_start_clicked.call_deferred()
 	for _i in 12:
 		await get_tree().physics_frame
@@ -789,7 +815,55 @@ func _run() -> void:
 	_check(main.hud._shutter_frac >= 0.0 and main.hud._shutter_frac <= 1.0,
 			"shutter meter reads in range")
 
-	# --- M7: Deck B — airlock / relay / watchers / sacrifice ------------------
+	# --- Step 5: a racked module is permanent for the whole fleet -------------
+	# Once the fabricator has racked the video module, catching a chassis must
+	# not revoke it: the survivors, and every later deployment, keep the feed.
+	# Only a bot caught *carrying* the uninstalled module drops a wreck. This
+	# mirrors the flashlight-cargo catch above (host contact + 1.6 s teardown).
+	var site_pos: Vector3 = main._camera_site_pos
+	var stage_before: int = main._act_stage
+	_check(not main._pending_end_card and not main.hud._end_card.visible,
+			"no loss card is armed before the permanence catch")
+	_check(main.drones.size() == 2, "two chassis are flying before the permanence catch")
+	var live_bot = main.drone
+	patroller.global_position = Vector3(1.0, 0.2, -26.0)
+	live_bot.global_position = Vector3(1.3, 0.32, -26.0)
+	live_bot.velocity = Vector3.ZERO
+	patroller.force_stalk(live_bot.global_position)
+	for _i in 40:
+		await get_tree().physics_frame
+	_check(not main.last_catch_face.is_empty(),
+			"the face beat still stages on an installed-module catch")
+	_check(main._reeling, "the catch is inside its 1.6 s teardown window")
+	for _i in 150:
+		await get_tree().physics_frame
+	_check(main._camera_installed, "an installed module survives the catch")
+	_check(main._live_feed_active(), "the fleet keeps the live feed after the catch")
+	_check(main.drones.size() == 1 and main.drone != null,
+			"the link hops to the sole surviving chassis")
+	if main.drone != null:
+		_check(main.drone.live_view and main.drone.controlled,
+				"the survivor flies the live feed after the link hop")
+	_check(main._camera_site_pos.distance_to(site_pos) < 0.001,
+			"the wreck marker stays at the spur (no module dropped at the death site)")
+	_check(main.ship.wreck_pieces.is_empty(),
+			"an installed-module catch leaves no wreck hull behind")
+	_check(not main._pending_end_card and not main.hud._end_card.visible,
+			"a permanent-module catch arms no MODULE LOST card")
+	_check(main._act_stage == stage_before,
+			"a permanent-module catch does not regress the recovery stage")
+	# Spawn-time inheritance: a chassis built after the loss still boots live.
+	main._deploy_cd = 0.0
+	main._deploy_drone()
+	for _i in 4:
+		await get_tree().physics_frame
+	_check(main.drones.size() == 2, "a replacement chassis deploys after the loss")
+	_check(main.drone != null and main.drone.live_view,
+			"a newly deployed chassis inherits the installed live feed")
+	patroller.drone = null   # the test body is done hunting
+	patroller.state = patroller.State.PATROL
+
+	# --- M7: Deck B — airlock / relay / watchers -----------------------------
 	_check(main._act_stage == 1, "video module aboard: no authored loss is armed")
 	_check(main.hosts.size() == 1, "only the temporary probe body exists before Deck B")
 	main.hosts.erase(patroller)
@@ -826,11 +900,6 @@ func _run() -> void:
 			% main.ship.zone2_door.position.y)
 	_check(main.hosts.is_empty(), "the junction stays threat-free until you cross")
 
-	# Park the Collector near the maw so the beat resolves in test time
-	# without changing what triggers it.
-	main.collector.global_position = main.ship.collector_sacrifice + Vector3(-2.4, 0.0, 0.0)
-	main.collector.velocity = Vector3.ZERO
-
 	# First active-drone entry wakes the hold.
 	main.drone.global_position = Vector3(main.ship.zone2_threshold.x, 0.32,
 			main.ship.zone2_threshold.z - 2.6)
@@ -847,6 +916,24 @@ func _run() -> void:
 			"live feed survives the crossing (no authored loss)")
 	_check(not main.hud._end_card.visible and main._act_stage == 1,
 			"no loss card and no recovery stage are forced")
+
+	# The crossing does not touch the Collector: it keeps working the ship all
+	# session. Sample several seconds so a rest or a ground vomit is not read as
+	# a stalled body; progress means either a new waypoint or real displacement.
+	var collector_start: Vector3 = main.collector.global_position
+	var collector_wp_before: int = main.collector._wp
+	var collector_moved := 0.0
+	for _i in 240:
+		await get_tree().physics_frame
+		collector_moved = maxf(collector_moved,
+				collector_start.distance_to(main.collector.global_position))
+	_check(is_instance_valid(main.collector) and main.collector.is_physics_processing()
+			and main.collector._rig != null and main.collector._rig.visible,
+			"the Collector keeps its body and runs after the first Deck B entry")
+	_check(collector_moved > 0.5 or main.collector._wp != collector_wp_before,
+			"the Collector keeps walking its loop after the crossing")
+	_check(not main.processor.dormant,
+			"the Processor stays active after the crossing")
 
 	var aggressive_ok := true
 	for h in main.hosts:
@@ -872,6 +959,39 @@ func _run() -> void:
 			% main.drone.flashlight.spot_range)
 	_check(main.drone.lamp.omni_range <= 3.0,
 			"the emergency omni stays a close glow once the flashlight is fitted")
+
+	# --- Step 7: the shared watcher patience clock ---------------------------
+	# One clock for the fleet, armed by the first sighting by ANY watcher. The
+	# lit chassis is a beacon, so the watchers may already have armed it on
+	# waking; only trip the signal by hand when it is still idle.
+	var zone2_watchers: Array = main._zone2_watchers
+	_check(zone2_watchers.size() == 4, "four watcher bodies are tracked for the flip")
+	if main._watcher_clock < 0.0:
+		zone2_watchers[0]._enter_stalk()
+		await get_tree().physics_frame
+	_check(main._watcher_clock > 0.0
+			and main._watcher_clock
+			<= main.WATCHER_PATIENCE_MIN + main.WATCHER_PATIENCE_EXTRA,
+			"the first sighting arms one shared clock (%.0f s)" % main._watcher_clock)
+	_check(main._watcher_clock >= main.WATCHER_PATIENCE_MIN - 5.0,
+			"the clock keeps its guaranteed two-minute watch")
+	_check(not main._watchers_hostile, "the fleet is still watching while the clock runs")
+	var passive_ok := true
+	for w in zone2_watchers:
+		passive_ok = passive_ok and not w.hostile
+	_check(passive_ok, "all four watchers stay passive before the clock expires")
+	main.force_watcher_hostility()
+	var hostile_ok := true
+	for w in zone2_watchers:
+		hostile_ok = hostile_ok and w.hostile
+	_check(hostile_ok, "expiry flips every watcher to hostile together")
+	_check(main._watchers_hostile and main._watcher_clock <= 0.0,
+			"the flip latches and the clock cannot fire again")
+	# The rest of this suite drives the hold with planted watchers, so put them
+	# back by hand. The game never does this; only the probe needs isolation.
+	for w in zone2_watchers:
+		w.set_hostile(false)
+
 	for _i in 90:
 		await get_tree().physics_frame
 	_check(main._zone2_dark and main._env != null
@@ -879,22 +999,19 @@ func _run() -> void:
 			"the hold fades to genuine darkness (%.3f)"
 			% (main._env.ambient_light_energy if main._env != null else -1.0))
 
-	# The Collector feeds itself once, on screen and through the hull.
-	var sacrifice_frames := 0
-	while not main._collector_sacrificed and sacrifice_frames < 900:
-		await get_tree().physics_frame
-		sacrifice_frames += 1
-	_check(main._collector_sacrificed and main.collector.consumed,
-			"the Collector is consumed on the first Deck B entry")
-	_check(main.processor.dormant, "the Processor goes dormant after the meal")
-	_check(main.is_ancestor_of(main.collector._lantern)
-			and main.is_ancestor_of(main.collector._sack),
-			"the empty lantern and sack remain on the deck")
+	# Re-entry must not repeat the first-crossing beat, and the Collector is
+	# still out there working the ship.
+	var collector_reentry_start: Vector3 = main.collector.global_position
+	var collector_reentry_wp: int = main.collector._wp
 	main._on_active_enter_zone2()
-	for _i in 10:
+	for _i in 180:
 		await get_tree().physics_frame
-	_check(main.hosts.size() == 4 and main.collector.consumed,
-			"re-entering does not repeat the spawn or the meal")
+	_check(main.hosts.size() == 4,
+			"re-entering does not repeat the watcher spawn")
+	_check(main.collector.is_physics_processing() and main.collector._rig.visible
+			and (collector_reentry_start.distance_to(main.collector.global_position) > 0.3
+			or main.collector._wp != collector_reentry_wp),
+			"the Collector is still roaming on re-entry")
 
 	# The side hall is a one-shot, and it yields the drone no matter what.
 	# A watcher *inside* the hall defers the beat rather than competing; one

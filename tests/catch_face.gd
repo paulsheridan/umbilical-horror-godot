@@ -87,7 +87,8 @@ func _run() -> void:
 	await _boot()
 
 	# Force the live feed, then bind so the HUD's live tube is up before the
-	# catch (losing the module must not hide the staged face).
+	# catch. The staged face needs only a live feed at catch time; the module is
+	# permanent kit by now, so its loss can no longer hide the face.
 	main._camera_installed = true
 	main.debug_vision = false
 	main._start_sortie()
@@ -96,6 +97,8 @@ func _run() -> void:
 	_check(main.drone != null and main._live_feed_active(),
 			"live feed is up for the catch probe")
 	_check(main.hud._live.visible, "live optics window is already showing")
+	_check(main.CATCH_FACE_HOLD >= 0.5 and main.CATCH_FACE_HOLD <= 1.0,
+			"face hold is a readable beat under a second (%.2f s)" % main.CATCH_FACE_HOLD)
 
 	# --- Host (zombie) geometry ------------------------------------------------
 	var host := await _actor("res://scenes/actors/host.tscn")
@@ -149,9 +152,13 @@ func _run() -> void:
 	_check(not main._stage_catch_face(main.processor), "processor gets no catch face")
 
 	# --- Real catch: face hold, then snow, then the chassis is freed -----------
+	var caught: Node3D = main.drone
+	var catch_pos: Vector3 = caught.global_position
 	main._on_drone_caught(stalker)
+	var beat_frames := 0
 	for _i in 6:
 		await get_tree().physics_frame
+		beat_frames += 1
 		if main._catch_frames >= main.CATCH_FACE_MIN_FRAMES:
 			break
 	_check(main._catch_cam_active, "face beat still holding after the catch")
@@ -165,15 +172,46 @@ func _run() -> void:
 	var amt: float = main.hud._static_mat.get_shader_parameter("amount")
 	_check(amt < 0.05, "snow is suppressed during the face beat (amount %.3f)" % amt)
 
+	# The attack is still happening: the framing and the dying bot both shudder.
+	# Sampling two frames apart guarantees at least one fresh jitter roll.
+	var feed_a: Vector3 = main._feed_cam.global_transform.origin
+	var drone_a: Vector3 = caught.global_position
+	var yaw_a: float = caught.rotation.y
+	await _wait(2)
+	var feed_b: Vector3 = main._feed_cam.global_transform.origin
+	var drone_b: Vector3 = caught.global_position
+	var yaw_b: float = caught.rotation.y
+	_check(main._catch_cam_active, "face beat still up while sampling the struggle")
+	_check(feed_a.distance_to(feed_b) > 0.0005,
+			"staged framing shudders during the beat (moved %.4f m)" % [
+				feed_a.distance_to(feed_b)])
+	_check(drone_a.distance_to(drone_b) > 0.0005 or absf(yaw_a - yaw_b) > 0.0005,
+			"caught chassis judders during the beat (moved %.4f m, yaw %.4f rad)" % [
+				drone_a.distance_to(drone_b), absf(yaw_a - yaw_b)])
+	_check(drone_a.distance_to(drone_b) <= 0.10
+			and absf(yaw_a - yaw_b) <= 0.10,
+			"the judder stays small (within the named shake constants)")
+	_check(drone_b.distance_to(catch_pos) <= 0.2,
+			"the death spot holds (chassis %.3f m from the catch point)" % [
+				drone_b.distance_to(catch_pos)])
+
 	# The cut arrives after the hold: snow starts and the last frame freezes.
-	var snow_started := false
+	# Count physics frames from the catch so the beat can be timed: 60 fps, so
+	# 18 frames ~ 0.3 s and 72 frames ~ 1.2 s.
+	var first_snow := -1
 	for _i in 90:
 		await get_tree().physics_frame
+		beat_frames += 1
 		var now: float = main.hud._static_mat.get_shader_parameter("amount")
 		if now > 0.2:
-			snow_started = true
+			first_snow = beat_frames
 			break
+	var snow_started := first_snow > 0
 	_check(snow_started, "snow takes the tube after the face hold")
+	_check(first_snow >= 18,
+			"no flash cut: snow had not started by frame %d (0.3 s)" % 18)
+	_check(first_snow > 0 and first_snow <= 72,
+			"the face holds a beat but under a second (%d frames)" % first_snow)
 	_check(GameState.sortie == GameState.Sortie.PILOTING,
 			"the cut happens inside the catch window, before teardown")
 	_check(not main._catch_cam_active, "face beat has ended")

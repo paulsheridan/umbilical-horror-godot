@@ -69,18 +69,33 @@ func _run() -> void:
 			"the drag posts noise for radar and stills (%d events)"
 			% (NoiseBus.count - noise_before))
 
+	# Snapshot the deck before the yank: the remains are spawned the instant
+	# the arm reaches, not at the end of the beat.
+	var children_before := get_child_count()
 	var close_frames := 0
+	var range_frames := -1
 	while crawler._phase == 1 and close_frames < 900:
 		await get_tree().physics_frame
 		close_frames += 1
-	_check(crawler._phase == 2, "the crawler reaches its hold distance")
+		if range_frames >= 0:
+			range_frames += 1
+		var flat: Vector3 = drone.global_position - crawler.global_position
+		flat.y = 0.0
+		if range_frames < 0 and flat.length() <= crawler.HOLD_DIST:
+			range_frames = 0
+	_check(crawler._phase == 3,
+			"the crawler is yanked the instant the drone is in range")
+	_check(range_frames >= 0 and range_frames <= 10,
+			"the yank lands within 10 physics frames of the range entry (%d)"
+			% range_frames)
 	_check(crawler.global_position.distance_to(drone.global_position)
 			>= crawler.HOLD_DIST - 0.05,
 			"the crawler never touches the drone (%.2f m)"
 			% crawler.global_position.distance_to(drone.global_position))
-	_check(_said.size() >= 2, "the crawler talks at the hold beat")
+	_check(_said.has("help me, please help me oh god. Please"),
+			"the crawler opens with the authored plea")
+	_check(_said.has("No."), "the yank cuts the plea off with a No.")
 
-	var children_before := get_child_count()
 	var yank_frames := 0
 	while not crawler.done and yank_frames < 500:
 		await get_tree().physics_frame

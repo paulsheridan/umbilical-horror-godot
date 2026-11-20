@@ -6,7 +6,7 @@ moves. You pilot remote drones built from salvage to scrounge what you need.
 
 **PSX Look is on by default.** The 3D world is drawn at 240 lines with 15-bit
 dithered colour, vertex snap and affine textures, while the HUD, map and
-options stay crisp. Press **F5** (or use the title/pause screen's **PSX LOOK**
+options stay crisp. Press **F5** (or use the pause screen's **PSX LOOK**
 button) to change resolution, dither, snap, affine, fog, draw distance,
 texture depth, density and all thirteen presets live. Scanlines are off and not
 exposed. The master switch restores the authored look exactly. See
@@ -34,8 +34,11 @@ exposed. The master switch restores the authored look exactly. See
   body adds a rolling band. It never gets fully clean, but distance from the
   winch no longer degrades it — only real story beats drop the signal into
   snow.
-  Lose the module and the feed goes with it — you are back to stills until you
-  recover and refit it. Every drone carries the still camera as standard kit,
+  Once the module is racked at the fabricator the live feed is a **permanent
+  upgrade**: every drone in the fleet and every future sortie flies it, and
+  losing a chassis never loses the module. A bot caught while **carrying** the
+  salvaged module — before it reaches the fabricator — still drops a
+  recoverable wreck. Every drone carries the still camera as standard kit,
   even with live video.
 - **One link, a fleet of crawlers.** A sortie starts with one bot on the
   hatch cradle. Press `B` while piloting to deploy another, one at a time —
@@ -58,8 +61,12 @@ exposed. The master switch restores the authored look exactly. See
   other. The zombie that runs you down and kills on contact is the plain
   **host**; the Cold Hold's bodies are **watchers** — the same brain, but on
   direct sight a watcher closes only to its ~7 m stand-off, plants and watches.
-  A watcher never attacks: it takes a chassis only when the player drives into
-  it, and it holds its ground when approached.
+  They are patient, not passive: the first sighting by any of them starts one
+  shared clock — at least two minutes of watching, plus a random 0–2 minutes —
+  and when it runs out every watcher turns hostile together and hunts like the
+  plain host: closing, reaching, contact kills. Breaking line of sight still
+  breaks the pursuit, but they never go back to watching. Only the opening
+  minutes are safe to be seen in.
 - **M7: Deck B — the Cold Hold.** Through the junction's north airlock, an
   eight-metre umbilical opens into a pitch-black hold that has roughly doubled
   in size: the original open floor still reads as one room, with a west hall
@@ -68,20 +75,22 @@ exposed. The master switch restores the authored look exactly. See
   tether drum — `MAX_TETHER` never changes. The first time the active
   drone crosses, four aggressive watchers wake at authored points 20+ m out:
   wider eyes (~21 m, 105°), a real memory, faster patrol/hunt/stalk speeds, and
-  a long patience. They are watchers, not hunters: each closes to its ~7 m
-  stand-off, plants and watches, and never attacks — the fail state is a
-  contact the player drives into. They stay escapable: break line of sight,
-  stop rolling outside the short still radius, and they search rather than
-  track. Each owns a separate rectangular loop that avoids the west side of the
-  room and the crawler hallway. The hold is genuinely dark (ambient and fog drop
-  only while the active drone is inside), sparse hard cover is the only cover,
-  and the lamp opens up just enough to read a body at the edge of its reach.
-- **The Collector feeds itself, once.** The same first crossing sends the
-  Collector to the Processor. It sets down anything it is carrying first, walks
-  itself to the maw, and is consumed over ~3.6 s: the lantern gutters out, the
-  sack drags, the wet crunch carries through the hull, and the Processor goes
-  dormant for the rest of the session. The empty lantern and sack remain on the
-  deck. Deck A is threat-free from then on.
+  a long patience. They are watchers first: each closes to its ~7 m stand-off
+  and plants, and never closes on its own — the early fail state is a contact
+  the player drives into. Then the shared clock runs out and every watcher hunts
+  like the plain host: closing, reaching, contact kills. They stay escapable:
+  break line of sight, stop rolling outside the short still radius, and they
+  search rather than track. Each owns a separate rectangular loop that avoids
+  the west side of the room and the crawler hallway. The hold is genuinely dark
+  (ambient and fog drop only while the active drone is inside), sparse hard
+  cover is the only cover, and the lamp opens up just enough to read a body at
+  the edge of its reach.
+- **The Collector keeps working the ship.** It is not part of the first-crossing
+  beat. All session it walks its annex/berth loop, picks up the 12 scattered
+  crew remains, and hauls them to the Processor's pile. When no parts are left
+  to collect it just keeps wandering its halls, resting and ground-vomiting on
+  its route forever. It never kills and its route avoids the opening rooms, but
+  it is always out there working — and the Processor never goes dormant.
 - **The crawler in the side hall.** Off the Cold Hold's east edge, a dark
   3 x 17 m side corridor is now lit by a few weak amber practicals — just
   enough to draw you in and let you watch. A human survivor with no legs drags
@@ -101,9 +110,12 @@ exposed. The master switch restores the authored look exactly. See
   through the new halls — the dark room and its connecting corridor now carry
   more of them too. The room's tenant is the **Stalker**: it starts folded into
   one wall niche, hunts slowly for a while, folds into a *different* corner,
-  then hunts again. It stays near walls while hunting rather than cutting
-  across the open floor. Low machinery pockets are still the counterplay — a
-  still drone under a machine is invisible to its sight.
+  then hunts again. It attacks twice: the first lunge contact only hurts —
+  the camera is knocked up and askew, the body spun and shoved — and the hunt
+  restarts; the next contact destroys the chassis. It stays near walls while
+  hunting rather than cutting across the open floor. Low machinery pockets are
+  still the counterplay — a still drone under a machine is invisible to its
+  sight.
 - **M5: hull-borne sound and the hand-copy map.** Positional audio routes
   through a lowpass "Hull" bus when a wall occludes the listener; hosts read
   as three-rooms-away. Motor pitch strains with load. **The map fills itself
@@ -150,8 +162,8 @@ exposed. The master switch restores the authored look exactly. See
   is not broken: it carries the bot with the link and camera still live (the
   player can watch the whole ride through the feed) and sets it down in front
   of the Processor. It shows up as work being done — evidence that something is
-  cleaning the ship. On the first Deck B crossing it walks itself into the maw
-  and is gone (see above).
+  cleaning the ship. It is never consumed: the first Deck B crossing leaves it
+  on its loop, and once the 12 remains are gone it just wanders its halls.
 - **The Processor: the last body.** East of the berth hall, a long, almost
   unlit service hall ends in a chamber where a **giant mouth on two legs** is
   pinned to the deck. It never walks. Two telescoping gaunt arms with cube
@@ -163,8 +175,8 @@ exposed. The master switch restores the authored look exactly. See
   eaten, and the fleet link hops to a survivor. Drive clear of the hand's reach
   and the same telegraph is survivable. The Collector's drop mark sits at the
   edge of that reach, so a delivered bot has one chance to drive west down the
-  hall. After the Deck B sacrifice the Processor is dormant for the rest of the
-  session: the jaw hangs, the hands stop, and the wing is inert.
+  hall. The Processor never goes dormant: it keeps feeding from the pile for the
+  whole session, so its wing stays a live threat.
 
 ## Run
 
@@ -173,6 +185,11 @@ With **Godot 4.7+** installed:
 	godot --path .
 
 or open this folder in the Godot editor and press F5.
+
+Launch opens on a title card — **CLICK TO BEGIN** — and the click swaps in a
+short lore card: the hull-attached infestation, E on the pilot chair, stills and
+radar until modules arrive, R to reel, and the fabricator to upgrade the fleet.
+The next click enters the bay. **F5** or the pause menu still opens PSX LOOK.
 
 ## Editing the level
 
@@ -267,12 +284,15 @@ narrow, sprung beam.
    available, and a print replaces only the video window.
 5. **Cross into Deck B.** With the module aboard, the junction's north airlock
    opens onto the umbilical and the Cold Hold. The first active-drone crossing
-   wakes four aggressive watchers at the far side, consumes the Collector, and
-   arms the crawler in the east side hall. The relay takes over the tether,
-   the radar labels it `RELAY`, and Deck B gets its own inset on the map. There
-   is no authored loss: a watcher will plant and watch rather than chase you
-   down, but never drive into one — and remember it can see a parked chassis
-   inside its short still radius. Come home if the feed starts to tear.
+   wakes four aggressive watchers at the far side and arms the crawler in the
+   east side hall; the Collector is not part of that beat and keeps working its
+   loop all session. The relay takes over the tether, the radar labels it
+   `RELAY`, and Deck B gets its own inset on the map. There
+   is no authored loss: a watcher plants and watches rather than chasing you
+   down at first, but the first sighting by any of them starts a shared clock —
+   at least two minutes, plus a random 0–2 — and then all four hunt together.
+   Never drive into one, and remember it can see a parked chassis inside its
+   short still radius. Come home if the feed starts to tear.
 6. **Follow the amber lights into Deck C.** At the far end of the crawler side
    hall the wall is gone. The engine room's relay takes over (`ENGINE` on the
    scanner), the room is dark around a red-lit core, and the Stalker waits
@@ -290,10 +310,13 @@ narrow, sprung beam.
 - **M2 done-when:** the flashlight run is a quiet, tense traversal — the grind
   of the galley door and the empty galley do the work; no junction ambush.
 - **M7 done-when:** the first Cold Hold crossing spawns four watchers without an
-  instant threshold kill, the Collector is visibly eaten exactly once, Deck A
-  is thereafter threat-free and the Processor inert, and the relay/HUD/map
-  carry the player through a dark, escapable hold. The module is never taken
-  from the player by script.
+  instant threshold kill, the Collector stays on its loop all session, hauling
+  remains and then wandering once the parts are gone, the Processor stays
+  active, and the relay/HUD/map carry the player through a dark, escapable
+  hold. The watchers plant and watch first, then flip to hunting together on
+  their shared clock (two minutes plus a random 0–2, and permanent once spent).
+  The module is never taken from the player once it is installed: it is
+  permanent fleet kit, and losing a chassis cannot revoke it.
 - **Deck C done-when:** the crawler is visibly yanked back down a lit side hall
   into the engine-room opening, the engine relay keeps the room inside the
   tether, and its Stalker is a real, escapable threat with low cover to hide
@@ -325,16 +348,19 @@ and cargo persistence), sortie lifecycle, chair
 suspend/resume persistence, the common host rules (curious/hunt/stalk, imprecise
 hearing, stillness safety, host-vs-host deafness), radar-first stills, live-feed
 unlock and motion-stress plumbing after the module salvage, the Deck B
-crossing (airlock, four aggressive watchers, no instant threshold kill, relay
-anchor and radar label, darkness, the one-shot Collector sacrifice and dormant
-Processor, the crawler trigger/deferral/resolution, F3 roster, no authored
+crossing (airlock, four aggressive watchers, no instant threshold kill, the
+shared watcher clock arming once and flipping all four together, relay
+anchor and radar label, darkness, the Collector staying on its loop all session
+— then wandering once the remains are gone — and the Processor staying active,
+the crawler trigger/deferral/resolution, F3 roster, no authored
 loss), the hull bus, and the hand-copy map with its Deck B/engine inset. The
 other suites add camera-loop hub/install checks, host-AI rules, watcher-AI
 rules, Stalker AI, the chase-reach pose probe (host arms, Stalker forelegs,
 toward the drone only while pursuing), the catch-face feed probe
-(a random close-up of the catcher's face for the last live frames before snow
-and destruction), Collector-AI, Processor-AI, level-scene and crawler
-set-piece checks. Run `tools/run_tests.sh` for the live totals.
+(a random close-up of the catcher's face, held ~0.75 s with the feed framing
+and the stricken drone shaking before snow and destruction), Collector-AI,
+Processor-AI, level-scene and crawler set-piece checks. Run
+`tools/run_tests.sh` for the live totals.
 
 The **level scene** test is the editor contract: it loads the baked scenes,
 checks the controller wiring and anchors, confirms geometry references shared
@@ -365,26 +391,32 @@ without a catch, and a moving drone in the open is killed on contact by the
 common host brain.
 
 The **watcher AI** test drives the Watcher prefab directly: it walks its route
-unprovoked, closes to its ~6.8 m stand-off and plants instead of attacking,
-holds the stand-off and its ground when the player approaches, kills only on
-contact the player drives into, gives the drone up when it loses sight, and —
-in the aggressive Zone 2 profile — still sees a parked chassis inside its
-short still radius, so stopping at arm's length is not safety.
+unprovoked, closes to its ~6.8 m stand-off and plants instead of attacking
+while passive, holds the stand-off and its ground when the player approaches,
+kills only on contact the player drives into, gives the drone up when it loses
+sight, fires its `sighted` signal once for the shared clock, and — when flipped
+hostile — closes inside the stand-off to kill like the plain host while still
+breaking pursuit on lost sight and staying hostile; in the aggressive Zone 2
+profile it also sees a parked chassis inside its short still radius, so stopping
+at arm's length is not safety.
 
 The **stalker AI** test drives the Stalker prefab directly: the thirty-leg
 centipede body with exact two-bone IK and a planted-foot gait, default patrol,
 directional investigation, sight-into-prowl, low-table cover,
 last-seen-direction search, the cat-and-mouse spook (a cut-off ahead of the
 prey that never catches), the patience clock, the semi-circular kill approach,
-the lunge contact kill, wall climbing with the ceiling vault, and the
-folded-lair drive-by spring. In the shipped level it is the engine-room tenant
-on Deck C.
+the two-stage strike (the first contact damages the camera and knocks the
+chassis; the hunt re-arms and the next contact kills), wall climbing with the
+ceiling vault, and the folded-lair drive-by spring. In the shipped level it is
+the engine-room tenant on Deck C.
 
 The **collector AI** test checks loud-door noise, the Collector's pickup/deposit
 cycle, long-range head tracking with line of sight, the mid-range spit at a
 player it will not chase, close pursuit of a nearby player body, the harmless
 grab stand-in, the give-up ring, and the chassis carry (frozen in the hands,
-delivered to the Processor's drop mark, never disconnected).
+delivered to the Processor's drop mark, never disconnected). It also runs the
+whole 12-remain loop — collecting, depositing, then wandering its halls with
+nothing left to pick up — and confirms the Collector is never consumed.
 
 The **processor AI** test probes the pinned body: the body never walks,
 motion-only sight (still, cone, carried cargo), the telegraph before the
@@ -392,10 +424,10 @@ reach, the catch inside arm's reach, the escape beyond it, feeding from the
 pile, and release after the fleet absorbs the loss.
 
 The **crawler set-piece** test drives the survivor directly: it is not a physics
-body, has no legs, crawls at 0.6–0.9 m/s, never closes inside its hold
-distance, speaks and posts drag noise, is yanked away on its hold beat, leaves
-a long visual-only smear trail, cannot be replayed, and resolves at the
-authored mark when abandoned.
+body, has no legs, crawls at 0.6–0.9 m/s, says its one line ("help me, please
+help me oh god. Please"), posts drag noise, is yanked away the instant it comes
+inside arm's reach, leaves a long visual-only smear trail, cannot be replayed,
+and resolves at the authored mark when abandoned.
 
 The **debug vision** test proves the F4 developer toggle: a module-less chassis
 gets the clean colour feed, low-light ambient/exposure and a wide lamp, hostile

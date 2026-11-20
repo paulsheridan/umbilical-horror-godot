@@ -16,6 +16,7 @@ happened. Stop testing and fix the build if a session is dominated by a bug
 - First photograph at: ___ min
 - First delivery at: ___ min
 - First loss at: ___ min
+- Title/lore card: read it or click straight through?:
 - Found the east annex loop? yes / no — how:
 - Circled the donut or cut through the cafeteria?:
 - Cafeteria line landed as a place? / photographed it?:
@@ -28,10 +29,17 @@ happened. Stop testing and fix the build if a session is dominated by a bug
 - Still camera read as evidence, not broken video?:
 - Primary stalker body read as horror (not another robot)?:
 - Hid under a low table? Did the stalker lose them?:
+- Caught the watcher flip to hunting on the shared clock? Understood it never
+  resets?:
+- First Stalker hit: camera knocked / hunt restarted understood? Second contact
+  killed?:
+- Crawler: the line landed? The instant yank read as inevitable, not scripted
+  delay?:
 - Found the berth wing? Loud door read as warning or alarm?:
 - Hid under a bunk? Did it land like the low tables?:
 - Service crawl / fallen locker: fair or fiddly?:
-- Saw the Collector? Read as scavenger (not hunter)?:
+- Saw the Collector? Read as scavenger (not hunter)? Kept working all session,
+  never consumed?:
 - Found the ossuary / noticed the growing pile?:
 - Reached the Processor hall? Did the pinned mouth read as a place?:
 - Worked out stillness = safe / motion = food at the Processor?:
@@ -40,6 +48,8 @@ happened. Stop testing and fix the build if a session is dominated by a bug
 - Lurk / don't-look-back jumpscare reaction (quote):
 - Ambush trap spotted before the spring? Drive-by eyes/pounce reaction (quote):
 - Post-loss reaction (quote):
+- Understood the installed video module is permanent (only a bot carrying the
+  uninstalled module can drop it)?:
 - "This is unfair" moments (game lied vs. game is scarce):
 - Audio balance: patroller audible over motor at 50%?:
 - Anything described as broken:
@@ -54,13 +64,16 @@ happened. Stop testing and fix the build if a session is dominated by a bug
 - Berth wing adds tension (loud doors, bunks, crawl) rather than filler:
   yes / no
 - Collector reads as a scavenger at work, not another hunter: yes / no
+- Collector kept working all session (never consumed): yes / no
+- Watcher flip read as one coordinated, permanent change, not four separate
+  chases: yes / no
 - Processor reads as a pinned place/feeding system, not another patroller:
   yes / no
 - Collector bot carry stayed watchable through the feed (no disconnect):
   yes / no
 - Fleet deploy (B) and swap (Q) were discovered and used deliberately: yes / no
-- Module loss produced the "go back for it" reflex without reading as
-  "now I'm blind": yes / no
+- A chassis loss produced the "go back for it" reflex without reading as
+  "now I'm blind", and the installed module never read as lost: yes / no
 - Nobody described the game as broken: yes / no
 - Top 5 issues to fix before Act 2/3 work:
   1.

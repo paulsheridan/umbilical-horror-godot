@@ -230,6 +230,17 @@ func _run() -> void:
 	drone.global_position = watcher.global_position + Vector3(0, 0.12, -0.8)
 	await _wait(12)
 	_check(_wcaught, "contact inside catch range still kills")
+
+	# Hostile (after main's shared clock expires): it runs the plain Host
+	# chase and holds its hands out again. The planted checks above stay first.
+	watcher.set_hostile(true)
+	drone.global_position = watcher.global_position + Vector3(0, 0.12, -9.0)
+	drone.velocity = Vector3(0, 0, -0.5)
+	watcher.force_stalk(drone.global_position)
+	await _wait(25)
+	_check(watcher.hostile and watcher.state == watcher.State.STALK
+			and watcher._sees and watcher.reach_weight > 0.6,
+			"a hostile watcher reaches while it closes like a host")
 	watcher.drone = null
 
 	# --- Stalker: the hunt pose and the spook rear --------------------------

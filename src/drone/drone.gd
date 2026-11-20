@@ -51,6 +51,11 @@ var anchor_pos := Vector3.ZERO
 var dock_pos := Vector3.ZERO
 var cam: Camera3D
 var motor: AudioStreamPlayer = null
+## Per-chassis strike damage. The first host contact breaks the lens and knocks
+## the body, but the bot stays pilotable; the next contact destroys it.
+var camera_damaged := false
+var cam_damage_pitch := 0.0   # radians; > 0 = knocked upward, never down
+var cam_damage_yaw := 0.0     # radians; always < 90 degrees in magnitude
 ## Per-chassis state. The fleet shares one active link but each bot keeps its
 ## own position, heading, charge and cargo while the player is elsewhere.
 var cargo := ""
@@ -181,6 +186,29 @@ func configure_bot(index: int) -> void:
 	_led.material = mat
 
 
+## The stalker's first hit: the lens is knocked and the chassis shoved, but the
+## bot is still fully pilotable. One strike per chassis — the next contact kills.
+func apply_camera_damage(rng: RandomNumberGenerator, push_dir: Vector3) -> bool:
+	if camera_damaged:
+		return false
+	camera_damaged = true
+	# Always above the horizontal plane: a broken lens looks at the ceiling,
+	# never back at its own body, so the feed still reads as a drone view.
+	cam_damage_pitch = rng.randf_range(0.25, 0.6)
+	# A random yaw either way, capped under 90 degrees so the world ahead is
+	# still in frame.
+	cam_damage_yaw = signf(rng.randf_range(-1.0, 1.0)) \
+			* rng.randf_range(0.1, 1.45)
+	rotation.y += rng.randf_range(-0.9, 0.9)
+	# An impulse, never a teleport: physics resolves the shove against walls.
+	var push := Vector3(push_dir.x, 0.0, push_dir.z)
+	velocity += push.normalized() * 2.2
+	if cam != null:
+		cam.rotation.x = cam_damage_pitch
+		cam.rotation.y = cam_damage_yaw
+	return true
+
+
 func _physics_process(delta: float) -> void:
 	if not controlled or GameState.paused:
 		if motor != null:
@@ -201,7 +229,9 @@ func _physics_process(delta: float) -> void:
 		_battery_dead_fired = true
 		battery_dead.emit()
 
-	cam.rotation.x = 0.0
+	# The damaged lens offset must survive this per-frame reset; yaw is never
+	# touched here, so a broken camera stays broken until the chassis dies.
+	cam.rotation.x = cam_damage_pitch
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var hurry := Input.is_action_pressed("hurry") and input.length() > 0.05
 	var speed := HURRY_SPEED if hurry else WALK_SPEED

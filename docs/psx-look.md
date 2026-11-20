@@ -5,10 +5,9 @@ UMBILICAL ships with the **PSX Look** presentation pack by heyheythere
 look, not a separate build: every part can be switched from inside the game,
 and the master switch puts the authored look back exactly.
 
-Open it with **F5**, from the title screen's **PSX LOOK** button, or from the
-pause screen. The panel is ordinary HUD UI outside the low-resolution world, so
-its text and controls stay sharp while the game behind it is 240-line and
-dithered.
+Open it with **F5** or from the pause screen. The panel is ordinary HUD UI
+outside the low-resolution world, so its text and controls stay sharp while the
+game behind it is 240-line and dithered.
 
 ## What it does
 

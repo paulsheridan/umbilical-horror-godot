@@ -9,11 +9,13 @@ extends Node3D
 
 const STALKER_SCENE := preload("res://scenes/actors/stalker.tscn")
 const DRONE := preload("res://src/drone/drone.gd")
+const DRONE_SCENE := preload("res://scenes/actors/drone.tscn")
 
 var stalker: CharacterBody3D
 var drone: CharacterBody3D
 var _caught := false
 var _lunged := false
+var _struck := false
 var _failed := false
 
 
@@ -71,6 +73,7 @@ func _run() -> void:
 	stalker.hide_spots = []
 	stalker.drone = drone
 	stalker.drone_caught.connect(func() -> void: _caught = true)
+	stalker.drone_struck.connect(func() -> void: _struck = true)
 	stalker.lunge_started.connect(func() -> void: _lunged = true)
 	stalker.reset()
 	stalker._rng.seed = 12345
@@ -258,16 +261,55 @@ func _run() -> void:
 	_check(stalker.state == stalker.State.CIRCLE or stalker.state == stalker.State.LUNGE,
 			"the circle commits to a strike")
 
-	# ---- Lunge / contact kill ------------------------------------------
+	# ---- Lunge: two-stage contact ---------------------------------------
+	# The first contact on a sound chassis hurts it and re-arms the hunt; the
+	# second contact kills. The Stalker attacks the same drone twice.
 	stalker.reset()
 	_caught = false
-	drone.global_position = stalker.global_position + Vector3(0, 0.12, -0.4)
-	stalker.force_chase()
+	_struck = false
 	_lunged = false
+	drone.camera_damaged = false
+	drone.cam_damage_pitch = 0.0
+	drone.cam_damage_yaw = 0.0
+	drone.global_position = stalker.global_position + Vector3(0, 0.12, -0.4)
+	drone.rotation.y = 0.0
+	drone.velocity = Vector3.ZERO
+	stalker.force_chase()
 	stalker._enter_lunge()
 	_check(_lunged, "the strike fires the lunge sting")
+	var rot_before: float = drone.rotation.y
 	stalker._do_lunge(0.016)
-	_check(_caught, "contact kills the drone immediately")
+	_check(not _caught and _struck,
+			"the first contact strikes the chassis instead of catching it")
+	_check(drone.camera_damaged, "the first contact damages the chassis camera")
+	_check(drone.cam_damage_pitch > 0.2 and drone.cam_damage_pitch < 0.65,
+			"the broken lens is knocked up, never down")
+	_check(absf(drone.cam_damage_yaw) < PI / 2.0 \
+			and absf(drone.cam_damage_yaw) > 0.0,
+			"the broken lens is yawed a random amount under 90 degrees")
+	var kicked := absf(wrapf(drone.rotation.y - rot_before, -PI, PI))
+	_check(kicked > 0.01, "the hit knocks the chassis heading off its old line")
+	_check(stalker.state == stalker.State.PROWL and stalker._kill_t < 0.2,
+			"the strike restarts the hunt with fresh patience")
+
+	# Fresh patience spends into the same kill approach: the loop begins again.
+	stalker.hunt_duration = 0.05
+	var recircled := false
+	for i in 200:
+		stalker._sees = true
+		stalker._do_prowl(0.016)
+		_drive_step(0.016)
+		if stalker.state == stalker.State.CIRCLE:
+			recircled = true
+			break
+	stalker.hunt_duration = 16.0
+	_check(recircled, "the re-armed hunt spends its patience again")
+
+	# The next contact on the same chassis destroys it, on the normal path.
+	drone.global_position = stalker.global_position + Vector3(0, 0.12, -0.4)
+	stalker._enter_lunge()
+	stalker._do_lunge(0.016)
+	_check(_caught, "the second contact destroys the damaged drone")
 
 	# An overhead body on the far side of the floor gap cannot reach down.
 	stalker.reset()
@@ -277,6 +319,47 @@ func _run() -> void:
 	stalker._enter_lunge()
 	stalker._do_lunge(0.016)
 	_check(not _caught, "an overhead strike cannot catch through the floor gap")
+
+	# ---- Damage offsets: always up, always under a quarter turn ----------
+	# The pilot must never learn a fixed new centre: every strike re-rolls.
+	var pairs: Array[Vector2] = []
+	var damage_ok := true
+	for i in 8:
+		drone.camera_damaged = false
+		var dmg_rng := RandomNumberGenerator.new()
+		dmg_rng.seed = 7000 + i
+		var applied: bool = drone.apply_camera_damage(dmg_rng, Vector3(1, 0, 0))
+		var pair := Vector2(drone.cam_damage_pitch, drone.cam_damage_yaw)
+		if not pairs.has(pair):
+			pairs.append(pair)
+		if not applied or drone.cam_damage_pitch <= 0.2 \
+				or absf(drone.cam_damage_yaw) >= PI / 2.0 \
+				or is_zero_approx(drone.cam_damage_yaw):
+			damage_ok = false
+	_check(damage_ok, "every strike tips the lens up and yaws it under 90 degrees")
+	_check(pairs.size() >= 4, "the damage offsets vary from strike to strike")
+
+	# ---- Real prefab: the per-frame camera reset keeps the offset --------
+	var prefab = DRONE_SCENE.instantiate()
+	add_child(prefab)
+	await get_tree().physics_frame
+	var prefab_rng := RandomNumberGenerator.new()
+	prefab_rng.seed = 4242
+	prefab.apply_camera_damage(prefab_rng, Vector3(0, 0, -1))
+	var cam_node: Camera3D = prefab.cam
+	_check(cam_node != null \
+			and is_equal_approx(cam_node.rotation.x, prefab.cam_damage_pitch) \
+			and is_equal_approx(cam_node.rotation.y, prefab.cam_damage_yaw),
+			"the damaged lens is written onto the real camera")
+	prefab.controlled = true
+	GameState.paused = false
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_check(absf(cam_node.rotation.x - prefab.cam_damage_pitch) < 0.001 \
+			and absf(cam_node.rotation.y - prefab.cam_damage_yaw) < 0.001,
+			"the per-frame reset no longer erases the broken lens offset")
+	prefab.controlled = false
+	prefab.queue_free()
 
 	# ---- Wall climbing -------------------------------------------------
 	stalker.reset()
@@ -374,14 +457,47 @@ func _run() -> void:
 	_check(stalker._hum.volume_db < -35.0, "the folded lair holds its hum")
 
 	# A drive-by springs it.
+	drone.camera_damaged = false
+	drone.cam_damage_pitch = 0.0
+	drone.cam_damage_yaw = 0.0
 	drone.global_position = Vector3(2, 0.32, 0)
 	drone.rotation.y = -PI * 0.5   # face the waiting body
+	_caught = false
+	_struck = false
 	_lunged = false
 	stalker._sense(0.016)
 	_check(stalker.state == stalker.State.LUNGE and _lunged,
 			"a drive-by springs the ambush")
 	stalker._animate(0.016)
 	_check(stalker._rig.eye_l.scale.x > 2.0, "the eyes snap open on the spring")
+
+	# The spring's first contact damages the chassis and re-arms the hunt.
+	for i in 300:
+		stalker._do_lunge(0.016)
+		_drive_step(0.016)
+		if _struck:
+			break
+	_check(_struck and not _caught and drone.camera_damaged,
+			"the ambush's first contact strikes instead of catching")
+	_check(stalker.state == stalker.State.PROWL,
+			"the struck drone gets a fresh hunt loop")
+
+	# Fold again and spring on the same, now damaged, chassis: this one kills.
+	stalker.reset()
+	stalker.global_position = Vector3(4, 0.2, 0)
+	stalker._enter_ambush()
+	drone.global_position = Vector3(2, 0.32, 0)
+	drone.rotation.y = -PI * 0.5
+	_lunged = false
+	stalker._sense(0.016)
+	_check(stalker.state == stalker.State.LUNGE and _lunged,
+			"a damaged chassis springs the lair again")
+	for i in 300:
+		stalker._do_lunge(0.016)
+		_drive_step(0.016)
+		if _caught:
+			break
+	_check(_caught, "the next spring kills the damaged drone outright")
 
 	print("STALKER AI", " FAILED" if _failed else " PASS")
 	get_tree().quit(1 if _failed else 0)

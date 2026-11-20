@@ -25,10 +25,6 @@ signal part_collected(part: Dictionary)
 signal part_deposited(count: int)
 signal bot_picked_up(bot: Node3D)
 signal bot_delivered(bot: Node3D)
-## The one-shot self-feed. `begun` fires when it starts walking to the maw,
-## `finished` when its body is gone and only the lantern and sack remain.
-signal sacrifice_begun
-signal sacrifice_finished
 
 const Mats := preload("res://src/mats.gd")
 
@@ -187,16 +183,8 @@ var _deliver_goal := -1
 var _deliver_wp := -1
 var _deliver_dir := 1
 
-# One-shot sacrifice state. `consumed` persists for the session: the body does
-# not return, and main never calls begin_sacrifice() twice.
-var sacrificing := false
-var consumed := false
 ## Debug vision: never lift a chassis. Main sets this on its developer toggle.
 var ghosted := false
-var sacrifice_pos := Vector3.ZERO
-var _sacrifice_phase := 0
-var _sacrifice_t := 0.0
-var _sacrifice_sfx := 0.0
 
 var _rig: Node3D
 var _skeleton: Skeleton3D
@@ -318,35 +306,6 @@ func reset() -> void:
 		_play_anim("idle", true)
 
 
-## The one scripted end for the Collector. It sets down anything it is
-## carrying, walks itself to the maw, and is consumed over a few audible
-## seconds. Main calls this exactly once when the active drone first enters
-## the Cold Hold; the body never comes back.
-func begin_sacrifice(at: Vector3) -> void:
-	if sacrificing or consumed:
-		return
-	sacrificing = true
-	sacrifice_pos = at
-	_sacrifice_phase = 0
-	_sacrifice_t = 0.0
-	_sacrifice_sfx = 0.0
-	_pickup_cd = 99999.0
-	_rest = 0.0
-	_clear_target()
-	_vomit_t = 0.0
-	_spray_next = 0.0
-	_ground_vomit_t = 0.0
-	_ground_spray_next = 0.0
-	ground_bend = 0.0
-	if _fold != null:
-		_fold.weight = 0.0
-	# Never eat a chassis the player is riding. Set it down on the authored
-	# drop mark first, exactly as a normal delivery would.
-	if carried_bot != null and is_instance_valid(carried_bot):
-		_drop_bot()
-	sacrifice_begun.emit()
-
-
 func _physics_process(delta: float) -> void:
 	# ESC pause freezes the drone; a Collector that kept walking, carrying or
 	# spitting behind the veil would break the freeze and bank a stale frame's
@@ -355,17 +314,6 @@ func _physics_process(delta: float) -> void:
 		return
 	_moving_to_pickup = false
 	_turning_to_target = false
-	if consumed:
-		_halt()
-		return
-	if sacrificing:
-		_sacrifice_tick(delta)
-		if not is_on_floor():
-			velocity.y -= GRAVITY * delta
-		move_and_slide()
-		_face(delta)
-		_animate(delta)
-		return
 
 	_update_target(delta)
 	var visible := target != null and _has_line_of_sight()
@@ -462,12 +410,16 @@ func _physics_process(delta: float) -> void:
 		_start_vomit()
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
+	# The watchdog needs the speed the body *tried* to move at: move_and_slide()
+	# zeroes velocity against a wall, which used to blind it exactly when the
+	# route had wedged.
+	var intended := Vector2(velocity.x, velocity.z).length()
 	move_and_slide()
 	# `_pursue` runs its own watchdog, but a busy delivery suppresses the
 	# chase entirely: without this the wedge check would be off for the whole
 	# carry leg, so a wedged delivery would never reroute.
 	if not pursuing or busy:
-		_check_stuck(delta)
+		_check_stuck(delta, intended)
 	# An active pickup approach and a mid-range spray both turn the body onto
 	# the target. Every other beat (route walking, resting, carrying, standing
 	# at PURSUE_STOP) faces travel direction or holds still.
@@ -476,73 +428,6 @@ func _physics_process(delta: float) -> void:
 	else:
 		_face(delta)
 	_animate(delta)
-
-
-func _sacrifice_tick(delta: float) -> void:
-	_sacrifice_t += delta
-	if _sacrifice_phase == 0:
-		_seek(sacrifice_pos, SPEED * 1.7)
-		# The walk is normally a short, visible approach. If the body is far
-		# off its loop and the straight line wedges on geometry, the beat still
-		# resolves: it reappears at the maw after a beat and the feeding plays
-		# out. The player is in Deck B and cannot see the approach.
-		if _flat_dist(sacrifice_pos) >= 0.6 and _sacrifice_t >= 8.0:
-			global_position = sacrifice_pos + Vector3(0.0, 0.2, 0.0)
-			velocity = Vector3.ZERO
-		if _flat_dist(sacrifice_pos) < 0.6:
-			_sacrifice_phase = 1
-			_sacrifice_t = 0.0
-			_halt()
-			if _lantern != null:
-				_lantern.light_energy = 0.7
-			NoiseBus.emit_noise(global_position, 0.65)
-		return
-	_halt()
-	# The lantern gutters, the sack drags across the deck, and the wet work
-	# happens in three ugly bites. No cutscene: it is still a body being fed.
-	if _lantern != null:
-		var fade := maxf(0.0, 1.0 - _sacrifice_t / 3.6)
-		_lantern.light_energy = 0.7 * fade * (0.45 + 0.55 * absf(sin(_sacrifice_t * 17.0)))
-	if _sack != null:
-		_sack.visible = true
-		_sack.rotation.z = sin(_sacrifice_t * 9.0) * 0.18
-	_sacrifice_sfx -= delta
-	if _sacrifice_sfx <= 0.0 and _sacrifice_t < 3.4:
-		_sacrifice_sfx = 0.85
-		Sfx.play("wet_crunch", global_position, -2.0, randf_range(0.9, 1.06))
-		NoiseBus.emit_noise(global_position, 0.75)
-	if _sacrifice_t >= 3.6:
-		_finish_sacrifice()
-
-
-func _finish_sacrifice() -> void:
-	if consumed:
-		return
-	consumed = true
-	sacrificing = false
-	Sfx.play("wet_snap", global_position, 0.0, 0.86)
-	# The empty props stay on the deck. They live beside the rig rather than
-	# under it, so hiding the body leaves the evidence behind.
-	if _anim != null:
-		_anim.stop()
-		_anim_name = ""
-	if _lantern_hand != null:
-		_lantern_hand.global_position = sacrifice_pos + Vector3(0.55, 0.12, 0.0)
-		_lantern_hand.rotation = Vector3.ZERO
-	if _lantern != null:
-		_lantern.light_energy = 0.10
-		_lantern.omni_range = 2.2
-	if _sack != null:
-		_sack.global_position = sacrifice_pos + Vector3(-0.48, 0.12, 0.0)
-		_sack.rotation = Vector3(0.0, 0.7, 0.0)
-		_sack.visible = true
-	if _rig != null:
-		_rig.visible = false
-	collision_layer = 0
-	collision_mask = 0
-	_halt()
-	set_physics_process(false)
-	sacrifice_finished.emit()
 
 
 ## Walk the authored loop, or the legal slice of it that leads to the pile
@@ -642,7 +527,7 @@ func force_wp(index: int) -> void:
 ## `_update_look`). The feet commit at CHASE_RANGE, so the Collector watches a
 ## player from far out and only shambles when they come close.
 func _update_target(_delta: float) -> void:
-	if ghosted or sacrificing or consumed:
+	if ghosted:
 		_clear_target()
 		return
 	if target != null:
@@ -677,13 +562,16 @@ func _find_nearest_target() -> Node3D:
 	var best_d := HEAD_TRACK_RANGE
 	# The two references are tested directly instead of via a fresh array: this
 	# runs every physics frame while the Collector has no target, which is most
-	# of the loop, so the array was pure per-frame garbage.
-	if _targetable(player_body):
+	# of the loop, so the array was pure per-frame garbage. A chassis reference
+	# can outlive the body it points at (the fleet loses one and the link hops),
+	# and a freed object cannot cross a typed parameter, so validity is checked
+	# before the call rather than inside it.
+	if is_instance_valid(player_body) and _targetable(player_body):
 		var d := _flat_dist(player_body.global_position)
 		if d < best_d:
 			best_d = d
 			best = player_body
-	if _targetable(player_target):
+	if is_instance_valid(player_target) and _targetable(player_target):
 		var d := _flat_dist(player_target.global_position)
 		# Strict `<` against the running best: player_body is tested first, so
 		# it keeps its precedence on an exact tie.
@@ -855,7 +743,7 @@ func force_ground_vomit() -> void:
 func _can_ground_vomit() -> bool:
 	if _ground_vomit_t > 0.0 or _ground_vomit_cd > 0.0:
 		return false
-	if sacrificing or consumed or pursuing:
+	if pursuing:
 		return false
 	if carried_bot != null or _deliver_goal >= 0 or _deliver_wp >= 0:
 		return false
@@ -1094,14 +982,14 @@ func _nearest_wp() -> int:
 	return best
 
 
-func _check_stuck(delta: float) -> void:
+func _check_stuck(delta: float, intended: float) -> void:
 	_stuck_t += delta
 	if _stuck_t < 0.8:
 		return
 	_stuck_t = 0.0
 	var moved := global_position.distance_to(_stuck_last)
 	_stuck_last = global_position
-	if moved < 0.10 and velocity.length() > 0.2:
+	if moved < 0.10 and intended > 0.2:
 		_stuck_run += 1
 		if _stuck_run >= 2:
 			_stuck_run = 0
@@ -1131,7 +1019,7 @@ func _animate(_delta: float) -> void:
 	var flat_speed := Vector2(velocity.x, velocity.z).length()
 	if flat_speed > 0.1:
 		want = "walk"
-	if not sacrificing and not is_on_floor() and velocity.y < -0.9:
+	if not is_on_floor() and velocity.y < -0.9:
 		want = "jump"
 	if want == "jump" and _anim != null and _anim_name == "jump" \
 			and not _anim.is_playing():

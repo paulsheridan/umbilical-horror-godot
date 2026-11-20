@@ -3,7 +3,7 @@ extends CanvasLayer
 ## prompt, message queue, title + pause overlays, F3 debug. Still built in
 ## code; converting this to a HUD scene is the remaining UI work.
 
-signal start_clicked
+signal lore_clicked
 signal resume_clicked
 signal psx_open_requested
 signal psx_closed
@@ -16,6 +16,14 @@ const SCANNER_SCRIPT := preload("res://src/ui/scanner.gd")
 const DESIGN_SIZE := Vector2(1280, 720)
 ## Five-character signal bar, one glyph row per level.
 const SIG_BARS := [".....", "|....", "||...", "|||..", "||||.", "|||||"]
+## The intro lore card, one string per paragraph. Authored copy: tests compare
+## the built labels against this, so edits here are the single source of truth.
+const LORE_PARAGRAPHS: Array[String] = [
+	"Something has attached itself to the hull of the ship. The crew began acting strangely, then changing completely. Things became dangerous and you barricaded yourself here, in the ship's workshop for hull repair drones.",
+	"Press E on the chair to pilot a drone.",
+	"They're not made for this, so both visual feedback and navigation will be poor, and only a still image camera and basic radar are available without new modules.",
+	"If you can find new modules to add, bring them back here, then press R to reel your drone back into the workshop and then press E on the fabricator in the corner to upgrade drones for future missions.",
+]
 
 # Feed-snow shader: a window-local CRT static veil. Amount 0 is clear; 1 is
 # total signal loss. It never covers the radar window.
@@ -197,6 +205,14 @@ var _subtitle: Label
 var _zone_beat: Label
 var _title: ColorRect
 var _title_vbox: VBoxContainer
+var _lore: ColorRect
+var _lore_vbox: VBoxContainer
+## The paragraph labels, in order, so tests can assert the copy verbatim.
+var _lore_labels: Array[Label] = []
+var _lore_blink_tween: Tween
+## The title->lore fade-in; begin_game() kills it so a swap mid-fade cannot
+## leave the card drawing at partial alpha behind the game.
+var _lore_fade_tween: Tween
 var _pause: ColorRect
 var _psx_veil: ColorRect
 var _psx_panel: PanelContainer
@@ -226,6 +242,7 @@ func _ready() -> void:
 	_build_crosshair()
 	_build_labels()
 	_build_title()
+	_build_lore()
 	_build_pause()
 	_build_debug()
 	_build_pilot()
@@ -348,10 +365,17 @@ func _layout_windows(live: bool) -> void:
 		return
 	# The picture owns the desktop in both modes: stills and live video are read
 	# at 16:9, while the radar is a small square instrument panel on the right.
-	# Anchors are fractions of a 16:9 viewport, so the 0.71 picture keeps its
-	# aspect and the 0.19 radar panel keeps a square body at 1280x720.
-	_set_window_rect(_cam_window, 0.035, 0.10, 0.745, 0.81)
-	_set_window_rect(_radar_window, 0.775, 0.10, 0.965, 0.471)
+	# These spans are the largest that keep that arrangement intact, recovered
+	# from the desk margins at a 1280x720 reference. Invariants:
+	# 1. Optics is 16:9: width 0.777-0.012 and height 0.805-0.040 both span 0.765,
+	#    so equal anchor spans stay square-on at any 16:9 viewport.
+	# 2. Radar body stays square: 0.200*1280 = 256 px wide, and the height span
+	#    0.389*720 minus the fixed 24 px title bar also leaves 256 px.
+	# 3. Width ratio optics:radar stays near the authored ~3.7:1 (0.765:0.200).
+	# 4. Both clear the 112 px pilot bar from _draw_desk (top at 0.844): the
+	#    optics bottom at 0.805 keeps ~28 px of breathing room above it.
+	_set_window_rect(_cam_window, 0.012, 0.040, 0.777, 0.805)
+	_set_window_rect(_radar_window, 0.790, 0.040, 0.990, 0.429)
 	_cam_state.text = "LIVE" if live else "STILL"
 
 
@@ -561,12 +585,6 @@ func _build_title() -> void:
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_vbox.add_child(note)
 
-	var psx := Button.new()
-	psx.text = "PSX LOOK  [F5]"
-	psx.focus_mode = Control.FOCUS_NONE
-	psx.pressed.connect(func() -> void: psx_open_requested.emit())
-	_title_vbox.add_child(psx)
-
 	var hint := _label(16, Color(0.5, 0.55, 0.4))
 	hint.text = "CLICK TO BEGIN"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -575,11 +593,70 @@ func _build_title() -> void:
 	_blink_tween.tween_property(hint, "modulate:a", 0.25, 0.8)
 	_blink_tween.tween_property(hint, "modulate:a", 1.0, 0.8)
 
-	_title.gui_input.connect(func(e: InputEvent) -> void:
-		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
-			_root.accept_event()
-			start_clicked.emit()
-	)
+	_title.gui_input.connect(_on_title_gui_input)
+
+
+## The title is a two-step gate: this click only swaps in the lore card, and
+## the lore card's own click starts the game. Named so tests can drive it.
+func _on_title_gui_input(e: InputEvent) -> void:
+	if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+		_root.accept_event()
+		_title.visible = false
+		_lore.visible = true
+		_lore.modulate.a = 0.0
+		_lore_fade_tween = create_tween()
+		_lore_fade_tween.tween_property(_lore, "modulate:a", 1.0, 0.4)
+
+
+func _on_lore_gui_input(e: InputEvent) -> void:
+	if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+		_root.accept_event()
+		lore_clicked.emit()
+
+
+## The second intro screen. Same near-black veil as the title so the swap reads
+## as one screen changing its mind, not a new window opening.
+func _build_lore() -> void:
+	_lore = ColorRect.new()
+	_lore.color = Color(0.008, 0.01, 0.013, 1.0)
+	_lore.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_lore.visible = false
+	_root.add_child(_lore)
+
+	_lore_vbox = VBoxContainer.new()
+	_lore_vbox.set_anchors_preset(Control.PRESET_CENTER)
+	_lore_vbox.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_lore_vbox.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_lore_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	_lore_vbox.add_theme_constant_override("separation", 16)
+	_lore.add_child(_lore_vbox)
+
+	# Warm grey, a step dimmer than the title's control line, so the card reads
+	# as an aside rather than a second title screen.
+	for text: String in LORE_PARAGRAPHS:
+		var p := _label(17, Color(0.55, 0.54, 0.5))
+		p.text = text
+		p.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		p.custom_minimum_size.x = 720
+		p.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_lore_vbox.add_child(p)
+		_lore_labels.append(p)
+
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 18)
+	_lore_vbox.add_child(gap)
+
+	var hint := _label(14, Color(0.5, 0.55, 0.4))
+	hint.text = "CLICK"
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lore_vbox.add_child(hint)
+	# Its own tween: the title's blink keeps running until the swap, and two
+	# loops driving the same property would fight.
+	_lore_blink_tween = create_tween().set_loops()
+	_lore_blink_tween.tween_property(hint, "modulate:a", 0.25, 0.8)
+	_lore_blink_tween.tween_property(hint, "modulate:a", 1.0, 0.8)
+
+	_lore.gui_input.connect(_on_lore_gui_input)
 
 
 func _build_pause() -> void:
@@ -1142,6 +1219,19 @@ func begin_game() -> void:
 	tw.tween_property(_title, "modulate:a", 0.0, 1.1)
 	tw.tween_callback(func() -> void:
 		_title.visible = false
+	)
+	# Direct-call starts (tests, probes) never show the lore card, so this stays
+	# a no-op there — and a hidden card can never swallow mouse look later.
+	if not _lore.visible:
+		return
+	if _lore_fade_tween != null and _lore_fade_tween.is_valid():
+		_lore_fade_tween.kill()
+	_lore.modulate.a = 1.0
+	_ignore_mouse(_lore)
+	var lw := create_tween()
+	lw.tween_property(_lore, "modulate:a", 0.0, 1.1)
+	lw.tween_callback(func() -> void:
+		_lore.visible = false
 	)
 
 

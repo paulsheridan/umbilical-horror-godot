@@ -45,7 +45,7 @@ scenes/
     player.tscn                  # body, capsule, camera, eye fill
     drone.tscn                   # chassis, tracks, camera, status lamp
     host.tscn                    # attacking zombie body (tests/dev placement)
-    watcher.tscn                 # Cold Hold watcher body (plants, never attacks)
+    watcher.tscn                 # Cold Hold watcher body (watches, then hunts)
     stalker.tscn                 # body + collision only; the centipede rig
                                  # is runtime-built (engine tenant)
     collector.tscn               # animated scavenger (Kenney), lantern, sack
@@ -165,10 +165,10 @@ All placement is editor-owned. The controller reads these on load:
 | `ProcessorDrop` | where the Collector sets a carried bot down |
 | `Zone2Threshold` | where Deck B begins and the first-entry beat fires |
 | `Zone2Relay` | the Cold Hold tether origin and radar label |
-| `Zone2Spawn0..3` | the four watcher spawn points (keep ≥ 12 m out) |
+| `Zone2Spawn0..3` | the four watcher spawn points (keep 20+ m out) |
 | `CrawlerSetPiece` | the side-hall entrance / set-piece trigger |
 | `CrawlerGrab` | the crawl origin and its abandon mark |
-| `CollectorSacrifice` | where the Collector feeds itself to the maw |
+| `CollectorSacrifice` | legacy first-crossing mark, retained but no longer used (the Collector is never consumed) |
 | `EngineEntry` | the engine-room threshold / first Deck C mark |
 | `EngineRelay` | the engine-room tether origin and radar label |
 | `EngineStalkerSpawn` | where the engine-room Stalker starts |
@@ -198,6 +198,11 @@ runtime value.
   deliberately pitch black while the active drone is inside.
 - The four watcher loops live in `main.ZONE2_ROUTES`. Every leg must stay out of
   the crawler side hall (`x > 19.2, z < -47`) and clear of the cover blocks.
+  The watchers arrive passive: the first sighting by any of them arms one shared
+  clock (`main.WATCHER_PATIENCE_MIN` 120 s plus `WATCHER_PATIENCE_EXTRA` 0–120 s),
+  and when it expires all four hunt like the plain host for the rest of the
+  session. Keep the spawn marks 20+ m from the threshold so the hold does not
+  start already hunting.
 - The crawler hall is the east-edge corridor (`CrawlerWestWall`,
   `CrawlerCeiling`, `CrawlerFloor`) plus the throat that opens north into
   `EngineRoom`. Trigger and end marks are the `CrawlerSetPiece` /
@@ -244,8 +249,9 @@ tools/run_tests.sh level_scene     # one suite
 The suite set is:
 
 ```
-autotest camera_loop host_ai_rules stalker_ai
-collector_ai processor_ai level_scene crawler_setpiece debug_vision psx_look
+autotest camera_loop host_ai_rules watcher_ai stalker_ai zombie_reach
+catch_face collector_ai processor_ai level_scene crawler_setpiece debug_vision
+psx_look
 ```
 
 `level_scene` is the editor contract: it loads the baked scenes and checks the

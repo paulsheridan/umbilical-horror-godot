@@ -27,6 +27,8 @@ extends "res://src/host/host_base.gd"
 
 ## Emitted once per lunge. Main binds it to the jumpscare sting.
 signal lunge_started
+## Emitted on the first contact with a sound chassis: it is hurt, not taken.
+signal drone_struck
 
 enum State { PATROL, INVESTIGATE, SEARCH, PROWL, PLAY, CIRCLE, LUNGE, AMBUSH_SETUP, AMBUSH }
 
@@ -830,8 +832,19 @@ func _do_circle(delta: float) -> void:
 	_seek(_nav_target(target), W_CIRCLE)
 
 
+## First contact on a sound chassis: hurt it and re-arm the hunt. No catch is
+## latched, so the same loop runs again and the next contact destroys it.
+func _first_strike() -> void:
+	_halt()
+	var push: Vector3 = drone.global_position - global_position
+	push.y = 0.0
+	drone.apply_camera_damage(_rng, push)
+	drone_struck.emit()
+
+
 ## The strike. The only state that may catch. Off a wall it detaches INTO the
-## leap and lets gravity carry it down onto the prey.
+## leap and lets gravity carry it down onto the prey. The first contact on a
+## sound chassis only damages it and re-arms the hunt; the next contact kills.
 func _do_lunge(delta: float) -> void:
 	if drone == null or not is_instance_valid(drone):
 		_give_up()
@@ -839,6 +852,10 @@ func _do_lunge(delta: float) -> void:
 	var d := _flat_dist(drone.global_position)
 	if d < CATCH_RANGE \
 			and absf(global_position.y - drone.global_position.y) < CATCH_MAX_Y:
+		if drone.has_method("apply_camera_damage") and not drone.camera_damaged:
+			_first_strike()
+			_enter_prowl()
+			return
 		_catch()
 		return
 	_seek(drone.global_position, W_LUNGE)

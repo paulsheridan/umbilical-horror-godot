@@ -23,14 +23,13 @@ const SPEED_MIN := 0.60
 const SPEED_MAX := 0.90
 const HOLD_DIST := 2.6          # never crawls inside this
 const YANK_TIME := 15.0         # or after this long, whichever comes first
-const HOLD_VOICE_TIME := 2.6
 const YANK_ANIM := 1.25
 const YANK_DRAG := 16.0
 const SCRAPE_INTERVAL := 0.55
 
 ## The one-shot beat speaks a single line, so this holds exactly that line.
 const LINES := [
-	"It's in the walls.",
+	"help me, please help me oh god. Please",
 ]
 
 var drone = null
@@ -41,9 +40,8 @@ var done := false
 ## Radar reads it as a noise source, not a body mass.
 var radar_blips := true
 
-var _phase := 0                  # 0 dormant, 1 crawl, 2 hold/talk, 3 yank
+var _phase := 0                  # 0 dormant, 1 crawl, 3 yank
 var _t := 0.0
-var _hold_t := 0.0
 var _yank_t := 0.0
 var _scrape_t := 0.0
 ## Direction of the final drag: toward the hallway's far opening, not simply
@@ -84,7 +82,6 @@ func start(from_pos: Vector3, face_pos: Vector3) -> void:
 	active = true
 	_phase = 1
 	_t = 0.0
-	_hold_t = 0.0
 	_yank_t = 0.0
 	_scrape_t = 0.0
 	visible = true
@@ -138,8 +135,6 @@ func _process(delta: float) -> void:
 	match _phase:
 		1:
 			_crawl(delta)
-		2:
-			_hold(delta)
 		3:
 			_yank_tick(delta)
 	_animate(delta)
@@ -153,10 +148,9 @@ func _crawl(delta: float) -> void:
 	to.y = 0.0
 	var d := to.length()
 	if d <= HOLD_DIST:
-		_phase = 2
-		_hold_t = 0.0
-		_say(LINES[0])
-		Sfx.play("crawler_voice", global_position, -1.0, 0.86)
+		# In reach: the arm takes it now. There is no hold beat to talk
+		# through, so a fast drone can never end up on top of the body.
+		force_yank()
 		return
 	if _t >= YANK_TIME:
 		force_yank()
@@ -166,21 +160,9 @@ func _crawl(delta: float) -> void:
 	var dir := to / d
 	global_position += dir * speed * delta
 	_face(drone.global_position)
-	# It closes the last little bit only on the authored beat, never touching.
+	# The step itself can land inside the range, so check again and yank on
+	# this same frame rather than letting the body sit in the lamp.
 	if global_position.distance_to(drone.global_position) <= HOLD_DIST:
-		_phase = 2
-		_hold_t = 0.0
-		_say(LINES[0])
-		Sfx.play("crawler_voice", global_position, -1.0, 0.86)
-
-
-func _hold(delta: float) -> void:
-	if drone == null or not is_instance_valid(drone):
-		abandon()
-		return
-	_hold_t += delta
-	_face(drone.global_position)
-	if _hold_t >= HOLD_VOICE_TIME:
 		force_yank()
 
 

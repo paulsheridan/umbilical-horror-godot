@@ -144,6 +144,56 @@ func _run() -> void:
 	_check(collector._deliver_wp == 2,
 			"delivery completes when already heading to the pile")
 
+	# --- Parts exhausted ---------------------------------------------------
+	# The natural end state: every shared remains entry is taken but the array
+	# stays in place (main owns it). With nothing left to pick up the Collector
+	# must keep walking its authored loop — never stand at the pile or lock up.
+	collector.player_body = null
+	collector.player_target = null
+	collector.bots = []
+	collector.remains = ship.remains
+	for entry in collector.remains:
+		entry["taken"] = true
+	_check(collector.remains.size() == 12 and collector.carrying == 0,
+			"the shipped remains are all collected and the sack is empty")
+
+	var exhausted_floor := StaticBody3D.new()
+	add_child(exhausted_floor)
+	var exhausted_shape := CollisionShape3D.new()
+	var exhausted_box := BoxShape3D.new()
+	exhausted_box.size = Vector3(12, 0.2, 12)
+	exhausted_shape.shape = exhausted_box
+	exhausted_shape.position = Vector3(0, -0.1, 0)
+	exhausted_floor.add_child(exhausted_shape)
+	collector.waypoints = [Vector3(-2, 0, 0), Vector3(0, 0, 2),
+			Vector3(2, 0, 0), Vector3(0, 0, -2)]
+	collector.deposit_pos = Vector3(100, 0, 100)
+	collector.bot_drop_pos = Vector3(100, 0, 100)
+	collector.global_position = Vector3(0, 0.2, 0)
+	collector.reset()
+	collector._wp = 0
+	var wander_start: Vector3 = collector.global_position
+	var wander_wp: int = collector._wp
+	var walked := false
+	var carried_zero := true
+	var drift := 0.0
+	for _i in 600:
+		await get_tree().physics_frame
+		if Vector2(collector.velocity.x, collector.velocity.z).length() > 0.1:
+			walked = true
+		if collector.carrying != 0:
+			carried_zero = false
+		drift = maxf(drift, wander_start.distance_to(collector.global_position))
+	_check(walked and collector._wp != wander_wp,
+			"an exhausted Collector keeps walking its waypoints")
+	_check(carried_zero and collector.carrying == 0,
+			"nothing left to collect: the Collector never loads up")
+	_check(drift > 1.0,
+			"the Collector drifts along its route instead of parking at the pile")
+	_check(collector.is_physics_processing() and collector.is_on_floor(),
+			"the exhausted Collector stays live on the deck")
+	exhausted_floor.queue_free()
+
 	# --- Bot carrying ------------------------------------------------------
 	# The Collector lifts a chassis instead of killing it. The body is frozen
 	# in the carry (self-movement suspended), delivered to the Processor's
